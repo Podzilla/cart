@@ -1,0 +1,14 @@
+name: Use Template Java CI/CD
+
+on:
+  push:
+    branches: [ "main", "dev" ]
+  pull_request:
+    branches: [ "**" ]
+
+jobs:
+  call-ci:
+    uses: Podzilla/templates/.github/workflows/ci.yml@main
+    with:
+      branch: 'refs/heads/main'
+    secrets: inherit
