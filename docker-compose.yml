@@ -7,8 +7,6 @@ services:
     container_name: cart-service
     ports:
       - "8081:8080"
-    env_file:
-      - secret.env
     environment:
       SPRING_DATA_MONGODB_URI: mongodb://cart-db:27017/cartDB
       SPRING_DATA_MONGODB_DATABASE: cartDB
@@ -16,8 +14,8 @@ services:
       - cart-db
     volumes:
       - ./target:/app
-      - ./logs/cart:/logs
-    command: ["java", "-jar", "/app/cart-service.jar"]
+      - ./logs:/logs
+    command: ["java", "-jar", "/app/cart-0.0.1-SNAPSHOT.jar"]
 
   cart-db:
     image: mongo:latest
@@ -42,7 +40,7 @@ services:
     image: grafana/promtail:latest
     container_name: promtail
     volumes:
-      - ./promtail-config.yml:/etc/promtail/promtail-config.yaml
+      - ./promtail.yml:/etc/promtail/promtail-config.yaml
       - ./logs:/logs
     command:
       - -config.file=/etc/promtail/promtail-config.yaml

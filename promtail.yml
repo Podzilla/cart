@@ -15,4 +15,4 @@ scrape_configs:
           - localhost
         labels:
           job: cart-service
-          __path__: /logs/*.log
+          __path__: ./logs/*.log
