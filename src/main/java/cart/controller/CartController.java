@@ -108,4 +108,42 @@ public class CartController {
         cartService.clearCart(customerId);
         return ResponseEntity.noContent().build();
     }
+
+    @Operation(summary = "Archive the cart (soft-delete)")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Cart successfully archived"),
+            @ApiResponse(responseCode = "404", description = "Cart not found")
+    })
+    @PatchMapping("/{customerId}/archive")
+    public ResponseEntity<Cart> archiveCart(@PathVariable("customerId") String customerId) {
+        Cart archivedCart = cartService.archiveCart(customerId);
+        return ResponseEntity.ok(archivedCart);
+    }
+
+    @Operation(summary = "Unarchive a previously archived cart")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Cart successfully unarchived"),
+            @ApiResponse(responseCode = "404", description = "Archived cart not found")
+    })
+    @PatchMapping("/{customerId}/unarchive")
+    public ResponseEntity<Cart> unarchiveCart(@PathVariable("customerId") String customerId) {
+        Cart activeCart = cartService.unarchiveCart(customerId);
+        return ResponseEntity.ok(activeCart);
+    }
+
+    @Operation(summary = "Checkout cart by sending it to the Order Service")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Cart checked out and sent to Order Service"),
+            @ApiResponse(responseCode = "404", description = "Cart not found"),
+            @ApiResponse(responseCode = "500", description = "Failed to communicate with Order Service")
+    })
+    @PostMapping("/{customerId}/checkout")
+    public ResponseEntity<Cart> checkoutCart(@PathVariable("customerId") String customerId) {
+        try {
+            Cart updatedCart = cartService.checkoutCart(customerId);
+            return ResponseEntity.ok(updatedCart);
+        } catch (Exception ex) {
+            throw new IllegalCallerException("Error communicating with Order Service");
+        }
+    }
 }

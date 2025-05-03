@@ -2,10 +2,13 @@ package cart.service;
 
 import cart.model.Cart;
 import cart.model.CartItem;
+import cart.model.OrderRequest;
 import cart.repository.CartRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestTemplate;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.ArrayList;
@@ -19,11 +22,16 @@ public class CartService {
 
     private final CartRepository cartRepository;
 
+    private final RestTemplate restTemplate;
+
+    @Value("${order.service.url}")
+    private String orderServiceUrl;
+
 
     public Cart createCart(final String customerId) {
         return cartRepository.findByCustomerId(customerId)
                 .orElseGet(() -> {
-                    Cart newCart = new Cart(UUID.randomUUID().toString(), customerId, new ArrayList<>());
+                    Cart newCart = new Cart(UUID.randomUUID().toString(), customerId, new ArrayList<>(), false);
                     return cartRepository.save(newCart);
                 });
     }
@@ -87,6 +95,42 @@ public class CartService {
         Cart cart = getCartByCustomerId(customerId);
         cart.getItems().clear();
         cartRepository.save(cart);
+    }
+
+    public Cart archiveCart(String customerId) {
+        Cart cart = getActiveCart(customerId);
+        cart.setArchived(true);
+        return cartRepository.save(cart);
+    }
+
+    public Cart unarchiveCart(String customerId) {
+        Cart cart = getArchivedCart(customerId);
+        cart.setArchived(false);
+        return cartRepository.save(cart);
+    }
+
+    public Cart checkoutCart(String customerId) {
+        Cart cart = getActiveCart(customerId);
+
+        OrderRequest orderRequest = new OrderRequest();
+        orderRequest.setCustomerId(customerId);
+        orderRequest.setItems(cart.getItems());
+
+        restTemplate.postForObject(orderServiceUrl + "/orders", orderRequest, Void.class);
+
+        cart.getItems().clear();
+        return cartRepository.save(cart);
+    }
+
+
+    private Cart getActiveCart(String customerId) {
+        return cartRepository.findByCustomerIdAndArchived(customerId, false)
+                .orElseThrow(() -> new NoSuchElementException("Cart not found for customer ID: " + customerId));
+    }
+
+    private Cart getArchivedCart(String customerId) {
+        return cartRepository.findByCustomerIdAndArchived(customerId, true)
+                .orElseThrow(() -> new NoSuchElementException("No archived cart found for customer ID: " + customerId));
     }
 
 }

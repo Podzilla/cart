@@ -23,12 +23,15 @@ public class Cart {
 
     private List<CartItem> items = new ArrayList<>();
 
+    private boolean archived = false;
+
     @Override
     public String toString() {
         return "Cart{"
                 + "id='" + id + '\''
                 + ", customerId='" + customerId + '\''
                 + ", items=" + items
+                + ", archived" + archived
                 + '}';
     }
 
@@ -54,6 +57,14 @@ public class Cart {
 
     public void setItems(final List<CartItem> items) {
         this.items = items;
+    }
+
+    public boolean isArchived() {
+        return archived;
+    }
+
+    public void setArchived(final boolean archived) {
+        this.archived = archived;
     }
 }
 
