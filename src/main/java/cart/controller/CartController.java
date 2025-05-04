@@ -25,9 +25,9 @@ import io.swagger.v3.oas.annotations.media.Content;
 @RestController
 @RequestMapping("/api/cart")
 @RequiredArgsConstructor
-@Tag(name = "Cart Controller", description = "Handles cart" +
-        " operations like add, update," +
-        " remove items and manage cart")
+@Tag(name = "Cart Controller", description = "Handles cart"
+        + " operations like add, update,"
+        + " remove items and manage cart")
 public class CartController {
 
     private final CartService cartService;

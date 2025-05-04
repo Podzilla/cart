@@ -147,7 +147,8 @@ public class CartService {
         return cartRepository.findByCustomerIdAndArchived(customerId, true)
                 .orElseThrow(() ->
                         new NoSuchElementException("No archived"
-                                + " cart found for customer ID: " + customerId));
+                                + " cart found for customer ID: "
+                                + customerId));
     }
 
 }
