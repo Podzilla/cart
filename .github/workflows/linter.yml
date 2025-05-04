@@ -1,0 +1,12 @@
+name: Use Template Linter
+
+on:
+  pull_request:
+    branches: [ "**" ]
+
+jobs:
+  call-linter:
+    uses: Podzilla/templates/.github/workflows/super-linter.yml@main
+    with:
+      branch: 'dev'
+    secrets: inherit
