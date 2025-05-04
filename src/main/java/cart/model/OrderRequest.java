@@ -12,7 +12,7 @@ public class OrderRequest {
         return customerId;
     }
 
-    public void setCustomerId(String customerId) {
+    public void setCustomerId(final String customerId) {
         this.customerId = customerId;
     }
 
@@ -20,7 +20,7 @@ public class OrderRequest {
         return items;
     }
 
-    public void setItems(List<CartItem> items) {
+    public void setItems(final List<CartItem> items) {
         this.items = items;
     }
 }
