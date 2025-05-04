@@ -32,15 +32,17 @@ public class CartController {
 
     private final CartService cartService;
 
-    @Operation(summary = "Create a new cart for a " +
-            "customer or return existing one")
+    @Operation(summary = "Create a new cart for a "
+            + "customer or return existing one")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200",
                     description = "Cart created or retrieved successfully"),
             @ApiResponse(responseCode = "400",
-                    description = "Invalid customer ID provided", content = @Content),
+                    description = "Invalid customer ID provided",
+                    content = @Content),
             @ApiResponse(responseCode = "500",
-                    description = "Internal server error", content = @Content)
+                    description = "Internal server error",
+                    content = @Content)
     })
     @PostMapping("/create/{customerId}")
     public ResponseEntity<Cart> createCart(
@@ -77,8 +79,8 @@ public class CartController {
         return ResponseEntity.noContent().build();
     }
 
-    @Operation(summary = "Add an item to the cart" +
-            " or update its quantity if already exists")
+    @Operation(summary = "Add an item to the cart"
+            + " or update its quantity if already exists")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200",
                     description = "Item added or updated successfully"),
@@ -95,8 +97,8 @@ public class CartController {
         return ResponseEntity.ok(updatedCart);
     }
 
-    @Operation(summary = "Update quantity " +
-            "of an existing item in the cart")
+    @Operation(summary = "Update quantity "
+            + "of an existing item in the cart")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200",
                     description = "Quantity updated successfully"),
@@ -109,7 +111,7 @@ public class CartController {
     public ResponseEntity<Cart> updateItemQuantity(
             @PathVariable("customerId") final String customerId,
             @PathVariable("productId") final String productId,
-            @RequestParam int quantity) {
+            @RequestParam final int quantity) {
         Cart updatedCart = cartService.updateItemQuantity(
                 customerId, productId, quantity);
         return ResponseEntity.ok(updatedCart);
@@ -189,8 +191,8 @@ public class CartController {
             Cart updatedCart = cartService.checkoutCart(customerId);
             return ResponseEntity.ok(updatedCart);
         } catch (Exception ex) {
-            throw new IllegalCallerException("Error " +
-                    "communicating with Order Service");
+            throw new IllegalCallerException("Error "
+                    + "communicating with Order Service");
         }
     }
 }

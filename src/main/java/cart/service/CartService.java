@@ -38,8 +38,8 @@ public class CartService {
                 });
     }
 
-    public Cart addItemToCart(final String customerId
-            , final CartItem newItem) {
+    public Cart addItemToCart(final String customerId,
+                              final CartItem newItem) {
         Cart cart = getCartByCustomerId(customerId);
 
         Optional<CartItem> existingItem =
@@ -69,8 +69,8 @@ public class CartService {
                 .findFirst();
 
         if (existingItemOpt.isEmpty()) {
-            throw new ResponseStatusException
-                    (HttpStatus.NOT_FOUND, "Product not found in cart");
+            throw new ResponseStatusException(
+                    HttpStatus.NOT_FOUND, "Product not found in cart");
         }
 
         CartItem item = existingItemOpt.get();
@@ -128,8 +128,8 @@ public class CartService {
         orderRequest.setCustomerId(customerId);
         orderRequest.setItems(cart.getItems());
 
-        restTemplate.postForObject
-                (orderServiceUrl + "/orders", orderRequest, Void.class);
+        restTemplate.postForObject(
+                orderServiceUrl + "/orders", orderRequest, Void.class);
 
         cart.getItems().clear();
         return cartRepository.save(cart);
@@ -139,13 +139,15 @@ public class CartService {
     private Cart getActiveCart(final String customerId) {
         return cartRepository.findByCustomerIdAndArchived(customerId, false)
                 .orElseThrow(() -> new
-                        NoSuchElementException("Cart not found for customer ID: " + customerId));
+                        NoSuchElementException("Cart"
+                        + " not found for customer ID: " + customerId));
     }
 
     private Cart getArchivedCart(final String customerId) {
         return cartRepository.findByCustomerIdAndArchived(customerId, true)
                 .orElseThrow(() ->
-                        new NoSuchElementException("No archived cart found for customer ID: " + customerId));
+                        new NoSuchElementException("No archived"
+                                + " cart found for customer ID: " + customerId));
     }
 
 }
