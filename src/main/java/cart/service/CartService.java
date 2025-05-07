@@ -210,6 +210,7 @@ public class CartService {
                             + " found for customer ID: " + customerId);
                 });
         log.debug("Active cart retrieved:", cart);
+        return cart;
     }
 
     private Cart getArchivedCart(final String customerId) {
