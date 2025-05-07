@@ -9,6 +9,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RestController;
@@ -23,11 +24,12 @@ import cart.model.CartItem;
 import io.swagger.v3.oas.annotations.media.Content;
 
 @RestController
-@RequestMapping("/api/cart")
+@RequestMapping("/api/carts")
 @RequiredArgsConstructor
 @Tag(name = "Cart Controller", description = "Handles cart"
         + " operations like add, update,"
         + " remove items and manage cart")
+@Slf4j
 public class CartController {
 
     private final CartService cartService;
@@ -47,7 +49,10 @@ public class CartController {
     @PostMapping("/create/{customerId}")
     public ResponseEntity<Cart> createCart(
             @PathVariable("customerId") final String customerId) {
+        log.debug("Entering createCart endpoint"
+                + " with customerId:", customerId);
         Cart cart = cartService.createCart(customerId);
+        log.debug("Cart created or retrieved:", cart);
         return ResponseEntity.ok(cart);
     }
 
@@ -61,7 +66,11 @@ public class CartController {
     @GetMapping("/customer/{customerId}")
     public ResponseEntity<Cart> getCartByCustomerId(
             @PathVariable("customerId") final String customerId) {
+        log.debug("Entering getCartByCustomerId"
+                + " endpoint with customerId:",
+                customerId);
         Cart cart = cartService.getCartByCustomerId(customerId);
+        log.debug("Cart retrieved:", cart);
         return ResponseEntity.ok(cart);
     }
 
@@ -75,7 +84,12 @@ public class CartController {
     @DeleteMapping("/customer/{customerId}")
     public ResponseEntity<Void> deleteCart(
             @PathVariable("customerId") final String customerId) {
+        log.debug("Entering deleteCart end"
+                + "point with customerId:", customerId);
         cartService.deleteCartByCustomerId(customerId);
+        log.debug("Cart deleted for customerId:",
+                customerId);
+
         return ResponseEntity.noContent().build();
     }
 
@@ -93,7 +107,11 @@ public class CartController {
     public ResponseEntity<Cart> addItemToCart(
             @PathVariable("customerId") final String customerId,
             @RequestBody final CartItem cartItem) {
+        log.debug("Entering addItemToCart"
+                + " endpoint with customerId: {},"
+                + " cartItem: {}", customerId, cartItem);
         Cart updatedCart = cartService.addItemToCart(customerId, cartItem);
+        log.debug("Cart updated with new item: {}", updatedCart);
         return ResponseEntity.ok(updatedCart);
     }
 
@@ -112,8 +130,14 @@ public class CartController {
             @PathVariable("customerId") final String customerId,
             @PathVariable("productId") final String productId,
             @RequestParam final int quantity) {
+        log.debug("Entering updateItemQuantity"
+                        + " endpoint with customerId:,"
+                        + " productId: {}, quantity: {}",
+                customerId, productId, quantity);
         Cart updatedCart = cartService.updateItemQuantity(
                 customerId, productId, quantity);
+        log.debug("Cart updated with new quantity:",
+                updatedCart);
         return ResponseEntity.ok(updatedCart);
     }
 
@@ -128,8 +152,13 @@ public class CartController {
     public ResponseEntity<Cart> removeItemFromCart(
             @PathVariable("customerId") final String customerId,
             @PathVariable("productId") final String productId) {
+        log.debug("Entering removeItemFromCart"
+                + " endpoint with customerId:,"
+                + " productId:", customerId, productId);
         Cart updatedCart = cartService
                 .removeItemFromCart(customerId, productId);
+        log.debug("Cart updated after item removal:",
+                updatedCart);
         return ResponseEntity.ok(updatedCart);
     }
 
@@ -143,7 +172,10 @@ public class CartController {
     @DeleteMapping("/{customerId}/clear")
     public ResponseEntity<Void> clearCart(
             @PathVariable("customerId") final String customerId) {
+        log.debug("Entering clearCart"
+                + " endpoint with customerId:", customerId);
         cartService.clearCart(customerId);
+        log.debug("Cart cleared for customerId:", customerId);
         return ResponseEntity.noContent().build();
     }
 
@@ -157,7 +189,10 @@ public class CartController {
     @PatchMapping("/{customerId}/archive")
     public ResponseEntity<Cart> archiveCart(
             @PathVariable("customerId") final String customerId) {
+        log.debug("Entering archiveCart"
+                + " endpoint with customerId:", customerId);
         Cart archivedCart = cartService.archiveCart(customerId);
+        log.debug("Cart archived:", archivedCart);
         return ResponseEntity.ok(archivedCart);
     }
 
@@ -171,7 +206,10 @@ public class CartController {
     @PatchMapping("/{customerId}/unarchive")
     public ResponseEntity<Cart> unarchiveCart(
             @PathVariable("customerId") final String customerId) {
+        log.debug("Entering unarchiveCart"
+                + " endpoint with customerId:", customerId);
         Cart activeCart = cartService.unarchiveCart(customerId);
+        log.debug("Cart unarchived:", activeCart);
         return ResponseEntity.ok(activeCart);
     }
 
@@ -187,10 +225,15 @@ public class CartController {
     @PostMapping("/{customerId}/checkout")
     public ResponseEntity<Cart> checkoutCart(
             @PathVariable("customerId") final String customerId) {
+        log.debug("Entering checkoutCart"
+                + " endpoint with customerId:", customerId);
         try {
             Cart updatedCart = cartService.checkoutCart(customerId);
+            log.debug("Cart checked out: {}", updatedCart);
             return ResponseEntity.ok(updatedCart);
         } catch (Exception ex) {
+            log.error("Error during checkout"
+                    + " for customerId: {}", customerId, ex);
             throw new IllegalCallerException("Error "
                     + "communicating with Order Service");
         }

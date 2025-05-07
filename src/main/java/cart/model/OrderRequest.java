@@ -1,26 +1,21 @@
 package cart.model;
 
 
+import jakarta.validation.constraints.NotBlank;
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
 import java.util.List;
 
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
 public class OrderRequest {
+
+    @NotBlank
     private String customerId;
+
     private List<CartItem> items;
 
-    // Getters and setters
-    public String getCustomerId() {
-        return customerId;
-    }
-
-    public void setCustomerId(final String customerId) {
-        this.customerId = customerId;
-    }
-
-    public List<CartItem> getItems() {
-        return items;
-    }
-
-    public void setItems(final List<CartItem> items) {
-        this.items = items;
-    }
 }

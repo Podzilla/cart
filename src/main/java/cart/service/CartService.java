@@ -5,6 +5,7 @@ import cart.model.CartItem;
 import cart.model.OrderRequest;
 import cart.repository.CartRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -18,6 +19,7 @@ import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class CartService {
 
     private final CartRepository cartRepository;
@@ -29,13 +31,17 @@ public class CartService {
 
 
     public Cart createCart(final String customerId) {
-        return cartRepository.findByCustomerId(customerId)
+        log.debug("Entering createCart"
+                + " with customerId:", customerId);
+        Cart cart = cartRepository.findByCustomerId(customerId)
                 .orElseGet(() -> {
                     Cart newCart = new Cart(UUID.randomUUID()
                             .toString(), customerId, new
                             ArrayList<>(), false);
                     return cartRepository.save(newCart);
                 });
+        log.debug("Cart created/retrieved:", cart);
+        return cart;
     }
 
     public Cart addItemToCart(final String customerId,
