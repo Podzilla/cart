@@ -187,7 +187,8 @@ public class CartService {
         try {
             log.debug("Sending order request to"
                     + " Order Service for customerId:", customerId);
-            restTemplate.postForObject(orderServiceUrl + "/orders", orderRequest, Void.class);
+            restTemplate.postForObject(orderServiceUrl
+                    + "/orders", orderRequest, Void.class);
             cart.getItems().clear();
             Cart updatedCart = cartRepository.save(cart);
             log.debug("Cart checked out and cleared:", updatedCart);
@@ -202,7 +203,8 @@ public class CartService {
 
     private Cart getActiveCart(final String customerId) {
         log.debug("Entering getActiveCart with customerId:", customerId);
-        Cart cart = cartRepository.findByCustomerIdAndArchived(customerId, false)
+        Cart cart = cartRepository.findByCustomerIdAndArchived(customerId,
+                        false)
                 .orElseThrow(() -> {
                     log.error("Active cart not found"
                             + " for customerId:", customerId);

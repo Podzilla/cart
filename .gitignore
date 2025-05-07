@@ -1,6 +1,6 @@
 # Ignore Maven build output
 /target/
-
+/logs/
 
 HELP.md
 target/
