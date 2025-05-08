@@ -7,14 +7,15 @@ public class GlobalHandlerException extends
 
     private final HttpStatus status;
 
-    public GlobalHandlerException(HttpStatus status,
-                                  String message) {
+    public GlobalHandlerException(final
+                                  HttpStatus status, final String message) {
         super(message);
         this.status = status;
     }
 
-    public GlobalHandlerException(HttpStatus status,
-                                  String message, Throwable cause) {
+    public GlobalHandlerException(final
+                                  HttpStatus status, final String message,
+                                  final Throwable cause) {
         super(message, cause);
         this.status = status;
     }

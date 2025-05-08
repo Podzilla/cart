@@ -13,8 +13,8 @@ public class GlobalExceptionHandler
         extends ResponseEntityExceptionHandler {
     @ExceptionHandler(GlobalHandlerException.class)
     public ResponseEntity<Map<String, Object>>
-    handleGlobalHandlerException(GlobalHandlerException
-                                         ex) {
+    handleGlobalHandlerException(final
+                                 GlobalHandlerException ex) {
         Map<String, Object> errorResponse = new HashMap<>();
         errorResponse.put("status", ex.getStatus().value());
         errorResponse.put("error", ex.getStatus().getReasonPhrase());
