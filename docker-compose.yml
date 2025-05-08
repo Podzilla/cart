@@ -1,0 +1,59 @@
+version: '3.8'
+
+services:
+
+  cart-service:
+    image: openjdk:25-ea-4-jdk-oraclelinux9
+    container_name: cart-service
+    ports:
+      - "8081:8080"
+    environment:
+      SPRING_DATA_MONGODB_URI: mongodb://cart-db:27017/cartDB
+      SPRING_DATA_MONGODB_DATABASE: cartDB
+    depends_on:
+      - cart-db
+    volumes:
+      - ./target:/app
+      - ./logs:/logs
+    command: ["java", "-jar", "/app/cart-0.0.1-SNAPSHOT.jar"]
+
+  cart-db:
+    image: mongo:8.0.9
+    container_name: cart-db
+    environment:
+      MONGO_INITDB_DATABASE: cartDB
+    ports:
+      - "27018:27017"
+    volumes:
+      - cart-mongo-data:/data/db
+
+  # Reuse Loki and Promtail from your existing setup
+  loki:
+    image: grafana/loki:latest
+    container_name: loki
+    ports:
+      - "3100:3100"
+    command:
+      - -config.file=/etc/loki/local-config.yaml
+
+  promtail:
+    image: grafana/promtail:latest
+    container_name: promtail
+    volumes:
+      - ./promtail.yml:/etc/promtail/promtail-config.yaml
+      - ./logs:/logs
+    command:
+      - -config.file=/etc/promtail/promtail-config.yaml
+    depends_on:
+      - loki
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - loki
+
+volumes:
+  cart-mongo-data:
