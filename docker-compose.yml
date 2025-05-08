@@ -18,7 +18,7 @@ services:
     command: ["java", "-jar", "/app/cart-0.0.1-SNAPSHOT.jar"]
 
   cart-db:
-    image: mongo:latest
+    image: mongo:8.0.9
     container_name: cart-db
     environment:
       MONGO_INITDB_DATABASE: cartDB

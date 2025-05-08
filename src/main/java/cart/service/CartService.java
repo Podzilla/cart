@@ -1,5 +1,6 @@
 package cart.service;
 
+import cart.exception.GlobalHandlerException;
 import cart.model.Cart;
 import cart.model.CartItem;
 import cart.model.OrderRequest;
@@ -10,7 +11,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.util.ArrayList;
 import java.util.NoSuchElementException;
@@ -92,7 +92,7 @@ public class CartService {
         if (existingItemOpt.isEmpty()) {
             log.error("Product not found in"
                     + " cart for productId:", productId);
-            throw new ResponseStatusException(
+            throw new GlobalHandlerException(
                     HttpStatus.NOT_FOUND, "Product not found in cart");
         }
 
@@ -143,7 +143,8 @@ public class CartService {
         Cart cart = cartRepository.findByCustomerId(customerId)
                 .orElseThrow(() -> {
                     log.error("Cart not found for customerId:", customerId);
-                    return new NoSuchElementException("Cart not found");
+                    throw new GlobalHandlerException(
+                            HttpStatus.NOT_FOUND, "Cart not found");
                 });
         log.debug("Cart retrieved:", cart);
         return cart;
