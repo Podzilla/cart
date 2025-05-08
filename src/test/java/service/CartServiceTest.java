@@ -1,5 +1,6 @@
 package service;
 
+import cart.exception.GlobalHandlerException;
 import cart.model.Cart;
 import cart.model.CartItem;
 import cart.model.OrderRequest;
@@ -46,6 +47,7 @@ class CartServiceTest {
 
     @BeforeEach
     void setUp() throws NoSuchFieldException, IllegalAccessException {
+        // Initialize test data
         cart = new Cart(cartId, customerId, new ArrayList<>(), false);
         cartItem = new CartItem();
         cartItem.setProductId(productId);
@@ -113,10 +115,13 @@ class CartServiceTest {
     }
 
     @Test
-    void addItemToCart_cartNotFound_throwsNoSuchElementException() {
+    void addItemToCart_cartNotFound_throwsGlobalHandlerException() {
         when(cartRepository.findByCustomerId(customerId)).thenReturn(Optional.empty());
 
-        assertThrows(NoSuchElementException.class, () -> cartService.addItemToCart(customerId, cartItem));
+        GlobalHandlerException exception = assertThrows(GlobalHandlerException.class,
+                () -> cartService.addItemToCart(customerId, cartItem));
+        assertEquals(HttpStatus.NOT_FOUND, exception.getStatus());
+        assertEquals("Cart not found", exception.getMessage());
         verify(cartRepository).findByCustomerId(customerId);
         verify(cartRepository, never()).save(any());
     }
@@ -148,12 +153,13 @@ class CartServiceTest {
     }
 
     @Test
-    void updateItemQuantity_itemNotFound_throwsResponseStatusException() {
+    void updateItemQuantity_itemNotFound_throwsGlobalHandlerException() {
         when(cartRepository.findByCustomerId(customerId)).thenReturn(Optional.of(cart));
 
-        ResponseStatusException exception = assertThrows(ResponseStatusException.class,
+        GlobalHandlerException exception = assertThrows(GlobalHandlerException.class,
                 () -> cartService.updateItemQuantity(customerId, productId, 5));
-        assertEquals(HttpStatus.NOT_FOUND, exception.getStatusCode());
+        assertEquals(HttpStatus.NOT_FOUND, exception.getStatus());
+        assertEquals("Product not found in cart", exception.getMessage());
         verify(cartRepository).findByCustomerId(customerId);
         verify(cartRepository, never()).save(any());
     }
@@ -172,10 +178,13 @@ class CartServiceTest {
     }
 
     @Test
-    void removeItemFromCart_cartNotFound_throwsNoSuchElementException() {
+    void removeItemFromCart_cartNotFound_throwsGlobalHandlerException() {
         when(cartRepository.findByCustomerId(customerId)).thenReturn(Optional.empty());
 
-        assertThrows(NoSuchElementException.class, () -> cartService.removeItemFromCart(customerId, productId));
+        GlobalHandlerException exception = assertThrows(GlobalHandlerException.class,
+                () -> cartService.removeItemFromCart(customerId, productId));
+        assertEquals(HttpStatus.NOT_FOUND, exception.getStatus());
+        assertEquals("Cart not found", exception.getMessage());
         verify(cartRepository).findByCustomerId(customerId);
         verify(cartRepository, never()).save(any());
     }
@@ -211,10 +220,13 @@ class CartServiceTest {
     }
 
     @Test
-    void getCartByCustomerId_cartNotFound_throwsNoSuchElementException() {
+    void getCartByCustomerId_cartNotFound_throwsGlobalHandlerException() {
         when(cartRepository.findByCustomerId(customerId)).thenReturn(Optional.empty());
 
-        assertThrows(NoSuchElementException.class, () -> cartService.getCartByCustomerId(customerId));
+        GlobalHandlerException exception = assertThrows(GlobalHandlerException.class,
+                () -> cartService.getCartByCustomerId(customerId));
+        assertEquals(HttpStatus.NOT_FOUND, exception.getStatus());
+        assertEquals("Cart not found", exception.getMessage());
         verify(cartRepository).findByCustomerId(customerId);
     }
 
@@ -232,10 +244,13 @@ class CartServiceTest {
     }
 
     @Test
-    void clearCart_cartNotFound_throwsNoSuchElementException() {
+    void clearCart_cartNotFound_throwsGlobalHandlerException() {
         when(cartRepository.findByCustomerId(customerId)).thenReturn(Optional.empty());
 
-        assertThrows(NoSuchElementException.class, () -> cartService.clearCart(customerId));
+        GlobalHandlerException exception = assertThrows(GlobalHandlerException.class,
+                () -> cartService.clearCart(customerId));
+        assertEquals(HttpStatus.NOT_FOUND, exception.getStatus());
+        assertEquals("Cart not found", exception.getMessage());
         verify(cartRepository).findByCustomerId(customerId);
         verify(cartRepository, never()).save(any());
     }
