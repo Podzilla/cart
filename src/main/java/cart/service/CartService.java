@@ -14,7 +14,6 @@ import org.springframework.web.client.RestTemplate;
 
 import java.util.ArrayList;
 import java.util.NoSuchElementException;
-import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -178,7 +177,7 @@ public class CartService {
         return cart;
     }
 
-    public Cart saveCart(Cart cart) {
+    public Cart saveCart(final Cart cart) {
         return cartRepository.save(cart);
     }
 

@@ -17,11 +17,13 @@ public class UpdateQuantityCommand implements CartCommand {
     private final String customerId;
     private final String productId;
     private final int newQuantity;
-    private Integer previousQuantity; // For undo
+    private Integer previousQuantity;
 
     @Override
     public Cart execute() {
-        log.debug("Executing UpdateQuantityCommand for customerId: {}, productId: {}, quantity: {}", customerId, productId, newQuantity);
+        log.debug("Executing UpdateQuantityCommand "
+                + "for customerId: {}, productId: {}, quantity: "
+                + "{}", customerId, productId, newQuantity);
         Cart cart = cartService.getCartByCustomerId(customerId);
 
         Optional<CartItem> existingItemOpt = cart.getItems().stream()
@@ -29,18 +31,22 @@ public class UpdateQuantityCommand implements CartCommand {
                 .findFirst();
 
         if (existingItemOpt.isEmpty()) {
-            log.error("Product not found in cart for productId: {}", productId);
-            throw new GlobalHandlerException(HttpStatus.NOT_FOUND, "Product not found in cart");
+            log.error("Product not found in cart for "
+                    + "productId: {}", productId);
+            throw new GlobalHandlerException(
+                    HttpStatus.NOT_FOUND, "Product not found in cart");
         }
 
         CartItem item = existingItemOpt.get();
         previousQuantity = item.getQuantity();
 
         if (newQuantity <= 0) {
-            log.debug("Removing item as quantity <= 0 for productId: {}", productId);
+            log.debug("Removing item as quantity <= 0 for"
+                    + " productId: {}", productId);
             cart.getItems().remove(item);
         } else {
-            log.debug("Updating quantity to: {} for productId: {}", newQuantity, productId);
+            log.debug("Updating quantity to: {} for "
+                    + "productId: {}", newQuantity, productId);
             item.setQuantity(newQuantity);
         }
 
@@ -51,7 +57,8 @@ public class UpdateQuantityCommand implements CartCommand {
 
     @Override
     public Cart undo() {
-        log.debug("Undoing UpdateQuantityCommand for customerId: {}, productId: {}", customerId, productId);
+        log.debug("Undoing UpdateQuantityCommand for"
+                + " customerId: {}, productId: {}", customerId, productId);
         Cart cart = cartService.getCartByCustomerId(customerId);
 
         if (previousQuantity == null) {
@@ -64,18 +71,22 @@ public class UpdateQuantityCommand implements CartCommand {
                 .findFirst();
 
         if (previousQuantity <= 0) {
-            log.debug("Restoring removed item during undo for productId: {}", productId);
+            log.debug("Restoring removed item during "
+                    + "undo for productId: {}", productId);
             cart.getItems().add(new CartItem(productId, previousQuantity));
         } else if (existingItemOpt.isPresent()) {
-            log.debug("Restoring previous quantity during undo for productId: {}", productId);
+            log.debug("Restoring previous quantity "
+                    + "during undo for productId: {}", productId);
             existingItemOpt.get().setQuantity(previousQuantity);
         } else {
-            log.debug("Adding item back during undo for productId: {}", productId);
+            log.debug("Adding item back during"
+                    + " undo for productId: {}", productId);
             cart.getItems().add(new CartItem(productId, previousQuantity));
         }
 
         Cart updatedCart = cartService.saveCart(cart);
-        log.debug("UpdateQuantityCommand undone, updated cart: {}", updatedCart);
+        log.debug("UpdateQuantityCommand undone,"
+                + " updated cart: {}", updatedCart);
         return updatedCart;
     }
 }
