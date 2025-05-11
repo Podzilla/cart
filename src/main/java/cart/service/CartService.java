@@ -50,31 +50,8 @@ public class CartService {
         log.debug("Entering addItemToCart "
                 + "with customerId:, newItem:",
                 customerId, newItem);
-
-        Cart cart = getCartByCustomerId(customerId);
-
-        Optional<CartItem> existingItem =
-                cart.getItems().stream()
-                .filter(i -> i.getProductId()
-                        .equals(newItem.getProductId()))
-                .findFirst();
-
-        if (existingItem.isPresent()) {
-            log.debug("Item already exists, updating"
-                    + " quantity for productId:", newItem.getProductId());
-
-            existingItem.get()
-                    .setQuantity(existingItem.get().
-                            getQuantity() + newItem.getQuantity());
-        } else {
-            log.debug("Adding new item to cart for productId: ",
-                    newItem.getProductId());
-            cart.getItems().add(newItem);
-        }
-
-        Cart updatedCart = cartRepository.save(cart);
-        log.debug("Cart updated:", updatedCart);
-        return updatedCart;
+        CartCommand command = new AddItemCommand(this, customerId, newItem);
+        return command.execute();
     }
 
 
@@ -83,34 +60,8 @@ public class CartService {
         log.debug("Entering updateItemQuantity with"
                         + " customerId:, productId:, quantity: ",
                 customerId, productId, quantity);
-        Cart cart = getCartByCustomerId(customerId);
-
-        Optional<CartItem> existingItemOpt = cart.getItems().stream()
-                .filter(i -> i.getProductId().equals(productId))
-                .findFirst();
-
-        if (existingItemOpt.isEmpty()) {
-            log.error("Product not found in"
-                    + " cart for productId:", productId);
-            throw new GlobalHandlerException(
-                    HttpStatus.NOT_FOUND, "Product not found in cart");
-        }
-
-        CartItem item = existingItemOpt.get();
-
-        if (quantity <= 0) {
-            log.debug("Removing item from cart"
-                    + " as quantity <= 0 for productId:", productId);
-            cart.getItems().remove(item);
-        } else {
-            log.debug("Updating quantity to:"
-                    + " for productId:", quantity, productId);
-            item.setQuantity(quantity);
-        }
-
-        Cart updatedCart = cartRepository.save(cart);
-        log.debug("Cart updated: {}", updatedCart);
-        return updatedCart;
+        CartCommand command = new UpdateQuantityCommand(this, customerId, productId, quantity);
+        return command.execute();
     }
 
 
@@ -118,11 +69,9 @@ public class CartService {
                                    final String productId) {
         log.debug("Entering removeItemFromCart"
                 + " with customerId:, productId:", customerId, productId);
-        Cart cart = getCartByCustomerId(customerId);
-        cart.getItems().removeIf(i -> i.getProductId().equals(productId));
-        Cart updatedCart = cartRepository.save(cart);
-        log.debug("Item removed, updated cart: {}", updatedCart);
-        return updatedCart;
+
+        CartCommand command = new RemoveItemCommand(this, customerId, productId);
+        return command.execute();
     }
 
     public void deleteCartByCustomerId(final String customerId) {
@@ -227,6 +176,10 @@ public class CartService {
                 });
         log.debug("Archived cart retrieved:", cart);
         return cart;
+    }
+
+    public Cart saveCart(Cart cart) {
+        return cartRepository.save(cart);
     }
 
 }

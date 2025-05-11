@@ -1,5 +1,4 @@
 package service;
-
 import cart.exception.GlobalHandlerException;
 import cart.model.Cart;
 import cart.model.CartItem;
@@ -13,10 +12,9 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.client.RestTemplate;
-import org.springframework.web.server.ResponseStatusException;
 
-import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.NoSuchElementException;
 import java.util.Optional;
@@ -44,19 +42,16 @@ class CartServiceTest {
     private final String customerId = "cust123";
     private final String productId = "prod456";
     private final String cartId = UUID.randomUUID().toString();
+    private final String orderServiceUrl = "http://localhost:8080";
 
     @BeforeEach
-    void setUp() throws NoSuchFieldException, IllegalAccessException {
+    void setUp() {
         // Initialize test data
         cart = new Cart(cartId, customerId, new ArrayList<>(), false);
-        cartItem = new CartItem();
-        cartItem.setProductId(productId);
-        cartItem.setQuantity(1);
+        cartItem = new CartItem(productId, 1);
 
-        // Set orderServiceUrl using reflection
-        Field orderServiceUrlField = CartService.class.getDeclaredField("orderServiceUrl");
-        orderServiceUrlField.setAccessible(true);
-        orderServiceUrlField.set(cartService, "http://localhost:8080");
+        // Set orderServiceUrl
+        ReflectionTestUtils.setField(cartService, "orderServiceUrl", orderServiceUrl);
     }
 
     @Test
@@ -92,17 +87,16 @@ class CartServiceTest {
         Cart result = cartService.addItemToCart(customerId, cartItem);
 
         assertEquals(1, result.getItems().size());
-        assertEquals(cartItem, result.getItems().get(0));
+        assertEquals(cartItem.getProductId(), result.getItems().get(0).getProductId());
+        assertEquals(cartItem.getQuantity(), result.getItems().get(0).getQuantity());
         verify(cartRepository).findByCustomerId(customerId);
         verify(cartRepository).save(cart);
     }
 
     @Test
     void addItemToCart_existingItem_updatesQuantity() {
-        cart.getItems().add(cartItem);
-        CartItem newItem = new CartItem();
-        newItem.setProductId(productId);
-        newItem.setQuantity(2);
+        cart.getItems().add(new CartItem(productId, 1));
+        CartItem newItem = new CartItem(productId, 2);
         when(cartRepository.findByCustomerId(customerId)).thenReturn(Optional.of(cart));
         when(cartRepository.save(any(Cart.class))).thenReturn(cart);
 
@@ -128,7 +122,7 @@ class CartServiceTest {
 
     @Test
     void updateItemQuantity_existingItem_updatesQuantity() {
-        cart.getItems().add(cartItem);
+        cart.getItems().add(new CartItem(productId, 1));
         when(cartRepository.findByCustomerId(customerId)).thenReturn(Optional.of(cart));
         when(cartRepository.save(any(Cart.class))).thenReturn(cart);
 
@@ -141,7 +135,7 @@ class CartServiceTest {
 
     @Test
     void updateItemQuantity_quantityZero_removesItem() {
-        cart.getItems().add(cartItem);
+        cart.getItems().add(new CartItem(productId, 1));
         when(cartRepository.findByCustomerId(customerId)).thenReturn(Optional.of(cart));
         when(cartRepository.save(any(Cart.class))).thenReturn(cart);
 
@@ -166,7 +160,7 @@ class CartServiceTest {
 
     @Test
     void removeItemFromCart_itemExists_removesItem() {
-        cart.getItems().add(cartItem);
+        cart.getItems().add(new CartItem(productId, 1));
         when(cartRepository.findByCustomerId(customerId)).thenReturn(Optional.of(cart));
         when(cartRepository.save(any(Cart.class))).thenReturn(cart);
 
@@ -232,7 +226,7 @@ class CartServiceTest {
 
     @Test
     void clearCart_cartExists_clearsItems() {
-        cart.getItems().add(cartItem);
+        cart.getItems().add(new CartItem(productId, 1));
         when(cartRepository.findByCustomerId(customerId)).thenReturn(Optional.of(cart));
         when(cartRepository.save(any(Cart.class))).thenReturn(cart);
 
@@ -300,17 +294,17 @@ class CartServiceTest {
 
     @Test
     void checkoutCart_validCart_sendsToOrderServiceAndClearsCart() {
-        cart.getItems().add(cartItem);
+        cart.getItems().add(new CartItem(productId, 1));
         when(cartRepository.findByCustomerIdAndArchived(customerId, false)).thenReturn(Optional.of(cart));
         when(cartRepository.save(any(Cart.class))).thenReturn(cart);
-        when(restTemplate.postForObject(eq("http://localhost:8080/orders"), any(OrderRequest.class), eq(Void.class)))
+        when(restTemplate.postForObject(eq(orderServiceUrl + "/orders"), any(OrderRequest.class), eq(Void.class)))
                 .thenReturn(null);
 
         Cart result = cartService.checkoutCart(customerId);
 
         assertTrue(result.getItems().isEmpty());
         verify(cartRepository).findByCustomerIdAndArchived(customerId, false);
-        verify(restTemplate).postForObject(eq("http://localhost:8080/orders"), any(OrderRequest.class), eq(Void.class));
+        verify(restTemplate).postForObject(eq(orderServiceUrl + "/orders"), any(OrderRequest.class), eq(Void.class));
         verify(cartRepository).save(cart);
     }
 
@@ -326,15 +320,15 @@ class CartServiceTest {
 
     @Test
     void checkoutCart_orderServiceFails_throwsRuntimeException() {
-        cart.getItems().add(cartItem);
+        cart.getItems().add(new CartItem(productId, 1));
         when(cartRepository.findByCustomerIdAndArchived(customerId, false)).thenReturn(Optional.of(cart));
-        when(restTemplate.postForObject(eq("http://localhost:8080/orders"), any(OrderRequest.class), eq(Void.class)))
+        when(restTemplate.postForObject(eq(orderServiceUrl + "/orders"), any(OrderRequest.class), eq(Void.class)))
                 .thenThrow(new RuntimeException("Order Service error"));
 
         RuntimeException exception = assertThrows(RuntimeException.class, () -> cartService.checkoutCart(customerId));
         assertEquals("Error communicating with Order Service", exception.getMessage());
         verify(cartRepository).findByCustomerIdAndArchived(customerId, false);
-        verify(restTemplate).postForObject(eq("http://localhost:8080/orders"), any(OrderRequest.class), eq(Void.class));
+        verify(restTemplate).postForObject(eq(orderServiceUrl + "/orders"), any(OrderRequest.class), eq(Void.class));
         verify(cartRepository, never()).save(any());
     }
 }
