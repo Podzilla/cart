@@ -4,30 +4,43 @@ import cart.exception.GlobalHandlerException;
 import cart.model.Cart;
 import cart.model.CartItem;
 import cart.model.OrderRequest;
+import cart.model.PromoCode;
 import cart.repository.CartRepository;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestTemplate;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 
+
+
+import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.NoSuchElementException;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class CartService {
 
     private final CartRepository cartRepository;
 
-    private final RestTemplate restTemplate;
+    private final RabbitTemplate rabbitTemplate;
+    private final PromoCodeService promoCodeService;
 
-    @Value("${order.service.url}")
-    private String orderServiceUrl;
+    @Value("${rabbitmq.exchange.name}")
+    private String exchangeName;
+    @Value("${rabbitmq.routing.key.checkout}")
+    private String checkoutRoutingKey;
 
+    // Constructor Injection
+    public CartService(CartRepository cartRepository, RabbitTemplate rabbitTemplate, PromoCodeService promoCodeService) {
+        this.cartRepository = cartRepository;
+        this.rabbitTemplate = rabbitTemplate;
+        this.promoCodeService = promoCodeService;
+    }
 
     public Cart createCart(final String customerId) {
         log.debug("Entering createCart"
@@ -36,7 +49,7 @@ public class CartService {
                 .orElseGet(() -> {
                     Cart newCart = new Cart(UUID.randomUUID()
                             .toString(), customerId, new
-                            ArrayList<>(), false);
+                            ArrayList<>(), false, null, BigDecimal.ZERO, BigDecimal.ZERO,BigDecimal.ZERO);
                     log.debug("Cart created:", newCart);
                     return cartRepository.save(newCart);
                 });
@@ -125,30 +138,6 @@ public class CartService {
         return activeCart;
     }
 
-    public Cart checkoutCart(final String customerId) {
-        log.debug("Entering checkoutCart with customerId:", customerId);
-        Cart cart = getActiveCart(customerId);
-
-        OrderRequest orderRequest = new OrderRequest();
-        orderRequest.setCustomerId(customerId);
-        orderRequest.setItems(cart.getItems());
-
-        try {
-            log.debug("Sending order request to"
-                    + " Order Service for customerId:", customerId);
-            restTemplate.postForObject(orderServiceUrl
-                    + "/orders", orderRequest, Void.class);
-            cart.getItems().clear();
-            Cart updatedCart = cartRepository.save(cart);
-            log.debug("Cart checked out and cleared:", updatedCart);
-            return updatedCart;
-        } catch (Exception e) {
-            log.error("Failed to checkout cart for customerId:", customerId, e);
-            throw new RuntimeException("Error"
-                    + " communicating with Order Service", e);
-        }
-    }
-
 
     private Cart getActiveCart(final String customerId) {
         log.debug("Entering getActiveCart with customerId:", customerId);
@@ -177,8 +166,171 @@ public class CartService {
         return cart;
     }
 
+//    public Cart saveCart(final Cart cart) {
+//        return cartRepository.save(cart);
+//    }
+
+
+    public Cart applyPromoCode(final String customerId, final String promoCodeInput) {
+        log.debug("Entering applyPromoCode for customerId: {},"
+                + " promoCode: {}", customerId, promoCodeInput);
+        Cart cart = getActiveCart(customerId);
+        String promoCodeUpper = promoCodeInput.toUpperCase();
+
+        PromoCode promoCode = promoCodeService.getActivePromoCode(promoCodeUpper)
+                .orElseThrow(() -> new GlobalHandlerException(
+                        HttpStatus.BAD_REQUEST, "Invalid, inactive, or expired promo code: "
+                        + promoCodeInput));
+
+        log.info("Applying valid promo code '{}' to "
+                + "cartId: {}", promoCodeUpper, cart.getId());
+        cart.setAppliedPromoCode(promoCodeUpper);
+
+        return saveCart(cart);
+    }
+
+
+    public Cart removePromoCode(final String customerId) {
+        log.debug("Entering removePromoCode for customerId:"
+                + " {}", customerId);
+        Cart cart = getActiveCart(customerId);
+
+        if (cart.getAppliedPromoCode() != null) {
+            log.info("Removing applied promo code '{}' from cartId: {}",
+                    cart.getAppliedPromoCode(), cart.getId());
+            cart.setAppliedPromoCode(null);
+            return saveCart(cart);
+        } else {
+            log.debug("No promo code to remove from cartId:"
+                    + " {}", cart.getId());
+            return cart;
+        }
+    }
+
+
     public Cart saveCart(final Cart cart) {
+        log.debug("Preparing to save cartId: {}", cart.getId());
+        recalculateCartTotals(cart);
+        log.debug("Saving cart with updated totals: {}", cart);
         return cartRepository.save(cart);
     }
 
+
+    private void recalculateCartTotals(Cart cart) {
+        log.debug("Recalculating totals for cartId: {}", cart.getId());
+
+
+        BigDecimal subTotal = calculateSubTotal(cart);
+        String formattedSubTotal = String.format("%.2f", subTotal);
+        cart.setSubTotal(new BigDecimal(formattedSubTotal));
+
+
+        BigDecimal discountAmount = BigDecimal.ZERO;
+        if (cart.getAppliedPromoCode() != null) {
+            Optional<PromoCode> promoOpt =
+                    promoCodeService.getActivePromoCode(
+                            cart.getAppliedPromoCode());
+
+            if (promoOpt.isPresent()) {
+                PromoCode promo = promoOpt.get();
+                boolean validForCart = true;
+
+                if (promo.getExpiryDate() != null && promo
+                        .getExpiryDate().isBefore(Instant.now())) {
+                    log.warn("Applied promo code {} is expired."
+                            + " Removing.", cart.getAppliedPromoCode());
+                    validForCart = false;
+                }
+
+                if (validForCart) {
+                    if (promo.getDiscountType() ==
+                            PromoCode.DiscountType.PERCENTAGE) {
+                        BigDecimal percentageValue = promo.getDiscountValue()
+                                .divide(new BigDecimal("100"));
+                        String formattedPercentage = String
+                                .format("%.2f", percentageValue);
+                        BigDecimal percentage = new BigDecimal(formattedPercentage);                        discountAmount = subTotal.multiply(percentage);
+                    } else if (promo.getDiscountType() ==
+                            PromoCode.DiscountType.FIXED_AMOUNT) {
+                        discountAmount = promo.getDiscountValue();
+                    }
+                }
+
+            } else {
+                log.warn("Applied promo code {} is no longer valid."
+                        + " Removing.", cart.getAppliedPromoCode());
+                cart.setAppliedPromoCode(null);
+            }
+        }
+
+        discountAmount = discountAmount.max(BigDecimal.ZERO);
+        discountAmount = discountAmount.min(subTotal);
+        String formattedDiscountAmount = String.format("%.2f", discountAmount);
+        cart.setDiscountAmount(new BigDecimal(formattedDiscountAmount));
+
+        BigDecimal totalPrice = subTotal.subtract(discountAmount);
+        String formattedTotalPrice = String.format("%.2f", totalPrice);
+        cart.setTotalPrice(new BigDecimal(formattedTotalPrice));
+
+        log.debug("Recalculated totals for cartId: {}:"
+                        + " SubTotal={}, Discount={}, Total={}",
+                cart.getId(), cart.getSubTotal(),
+                cart.getDiscountAmount(), cart.getTotalPrice());
+    }
+
+    private BigDecimal calculateSubTotal(Cart cart) {
+        if (cart.getItems() == null) {
+            return BigDecimal.ZERO;
+        }
+        return cart.getItems().stream()
+                .filter(item -> item.getUnitPrice() != null
+                        && item.getQuantity() > 0)
+                .map(CartItem::getItemTotal)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+
+    public Cart checkoutCart(final String customerId) {
+        log.debug("Entering checkoutCart [RabbitMQ] for customerId: {}", customerId);
+        Cart cart = getActiveCart(customerId);
+
+        recalculateCartTotals(cart);
+
+        if (cart.getItems().isEmpty()) {
+            log.warn("Attempted checkout for customerId: "
+                    + "{} with an empty cart.", customerId);
+            throw new GlobalHandlerException(HttpStatus.BAD_REQUEST,
+                    "Cannot checkout an empty cart.");
+        }
+
+        // Create the event payload using the potentially recalculated fields from the cart
+        OrderRequest checkoutEvent = new OrderRequest(
+                UUID.randomUUID().toString(),
+                customerId,
+                cart.getId(),
+                new ArrayList<>(cart.getItems()),
+                cart.getSubTotal(),
+                cart.getDiscountAmount(),
+                cart.getTotalPrice(),
+                cart.getAppliedPromoCode()
+        );
+
+        try {
+            log.debug("Publishing checkout event for cartId: {} with totals: Sub={}, Discount={}, Total={}",
+                    cart.getId(), cart.getSubTotal(), cart.getDiscountAmount(), cart.getTotalPrice());
+            rabbitTemplate.convertAndSend(exchangeName, checkoutRoutingKey, checkoutEvent);
+
+            log.info("Checkout event published successfully for cartId: {}. Clearing cart.", cart.getId());
+            cart.getItems().clear();
+            cart.setAppliedPromoCode(null);
+            Cart updatedCart = saveCart(cart);
+
+            log.debug("Cart cleared and saved after checkout: {}", updatedCart);
+            return updatedCart;
+
+        } catch (Exception e) {
+            log.error("Failed to publish checkout event for cartId: {}. Error: {}", cart.getId(), e.getMessage(), e);
+            throw new RuntimeException("Checkout process failed: Could not publish event.", e);
+        }
+    }
 }

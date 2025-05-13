@@ -5,9 +5,11 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.Transient;
 import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.mapping.Field;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -27,6 +29,13 @@ public class Cart {
     private List<CartItem> items = new ArrayList<>();
 
     private boolean archived = false;
+
+    private String appliedPromoCode;
+
+    private BigDecimal subTotal = BigDecimal.ZERO;
+    private BigDecimal discountAmount = BigDecimal.ZERO;
+    private BigDecimal totalPrice = BigDecimal.ZERO;
+
 
 }
 
