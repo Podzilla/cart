@@ -1,10 +1,12 @@
 package cart.model;
 
+import jakarta.validation.constraints.NotBlank;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
+import org.springframework.data.mongodb.core.mapping.Field;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -15,45 +17,16 @@ import java.util.List;
 @AllArgsConstructor
 public class Cart {
 
-
     @Id
+    @Field("_id")
     private String id;
 
+    @NotBlank
     private String customerId;
 
     private List<CartItem> items = new ArrayList<>();
 
-    @Override
-    public String toString() {
-        return "Cart{"
-                + "id='" + id + '\''
-                + ", customerId='" + customerId + '\''
-                + ", items=" + items
-                + '}';
-    }
+    private boolean archived = false;
 
-    public String getId() {
-        return id;
-    }
-
-    public void setId(final String id) {
-        this.id = id;
-    }
-
-    public String getCustomerId() {
-        return customerId;
-    }
-
-    public void setCustomerId(final String customerId) {
-        this.customerId = customerId;
-    }
-
-    public List<CartItem> getItems() {
-        return items;
-    }
-
-    public void setItems(final List<CartItem> items) {
-        this.items = items;
-    }
 }
 
