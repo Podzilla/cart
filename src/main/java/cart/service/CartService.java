@@ -4,18 +4,19 @@ import cart.exception.GlobalHandlerException;
 import cart.model.Cart;
 import cart.model.CartItem;
 import cart.model.OrderRequest;
+import cart.model.PromoCode;
 import cart.repository.CartRepository;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestTemplate;
 
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.NoSuchElementException;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -31,7 +32,9 @@ public class CartService {
     @Value("${rabbitmq.routing.key.checkout}")
     private String checkoutRoutingKey;
 
-    public CartService(CartRepository cartRepository, RabbitTemplate rabbitTemplate, PromoCodeService promoCodeService) {
+    public CartService(final CartRepository cartRepository,
+                       final RabbitTemplate rabbitTemplate,
+                       final PromoCodeService promoCodeService) {
         this.cartRepository = cartRepository;
         this.rabbitTemplate = rabbitTemplate;
         this.promoCodeService = promoCodeService;
@@ -65,7 +68,9 @@ public class CartService {
     }
 
     public Cart updateItemQuantity(final String customerId, final String productId, final int quantity) {
-        log.debug("Entering updateItemQuantity with customerId: {}, productId: {}, quantity: {}", customerId, productId, quantity);
+        log.debug("Entering updateItemQuantity with customerId:"
+                + " {}, productId: {}, quantity: {}", customerId,
+                productId, quantity);
         CartCommand command = new UpdateQuantityCommand(this, customerId, productId, quantity);
         return command.execute();
     }
@@ -185,7 +190,7 @@ public class CartService {
         return cartRepository.save(cart);
     }
 
-    private void recalculateCartTotals(Cart cart) {
+    private void recalculateCartTotals(final Cart cart) {
         log.debug("Recalculating totals for cartId: {}", cart.getId());
 
         BigDecimal subTotal = calculateSubTotal(cart);
@@ -235,7 +240,7 @@ public class CartService {
                 cart.getId(), cart.getSubTotal(), cart.getDiscountAmount(), cart.getTotalPrice());
     }
 
-    private BigDecimal calculateSubTotal(Cart cart) {
+    private BigDecimal calculateSubTotal(final Cart cart) {
         if (cart.getItems() == null) {
             return BigDecimal.ZERO;
         }
