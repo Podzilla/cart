@@ -21,6 +21,7 @@ import com.podzilla.mq.EventPublisher;
 import com.podzilla.mq.EventsConstants;
 import com.podzilla.mq.events.CartCheckedoutEvent;
 import com.podzilla.mq.events.ConfirmationType;
+import com.podzilla.mq.events.DeliveryAddress;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -60,6 +61,7 @@ class CartServiceTest {
     private final BigDecimal price1 = new BigDecimal("10.50");
     private final BigDecimal price2 = new BigDecimal("5.00");
     private final String cartId = UUID.randomUUID().toString();
+    private final DeliveryAddress address = new DeliveryAddress("123 Main St", "City", "State", "Country", "12345");
 
     private final String exchangeName = "test.cart.events";
     private final String checkoutRoutingKey = "test.order.checkout.initiate";
@@ -345,7 +347,7 @@ class CartServiceTest {
 
         doNothing().when(eventPublisher).publishEvent(eq(EventsConstants.ORDER_PLACED), any(CartCheckedoutEvent.class));
 
-        Cart result = cartService.checkoutCart(customerId, ConfirmationType.OTP, "", latitude, longitude);
+        Cart result = cartService.checkoutCart(customerId, ConfirmationType.OTP, "", latitude, longitude, address);
 
         ArgumentCaptor<CartCheckedoutEvent> eventCaptor = ArgumentCaptor.forClass(CartCheckedoutEvent.class);
         verify(eventPublisher).publishEvent(eq(EventsConstants.ORDER_PLACED), eventCaptor.capture());
@@ -374,7 +376,7 @@ class CartServiceTest {
         cart.getItems().add(new CartItem(productId1, 1, new BigDecimal("100.00")));
         String signature = "customer_signature_data";
 
-        Cart result = cartService.checkoutCart(customerId, ConfirmationType.SIGNATURE, signature, latitude, longitude);
+        Cart result = cartService.checkoutCart(customerId, ConfirmationType.SIGNATURE, signature, latitude, longitude, address);
 
         ArgumentCaptor<CartCheckedoutEvent> eventCaptor = ArgumentCaptor.forClass(CartCheckedoutEvent.class);
         verify(eventPublisher).publishEvent(eq(EventsConstants.ORDER_PLACED), eventCaptor.capture());
@@ -389,7 +391,7 @@ class CartServiceTest {
         cart.getItems().add(new CartItem(productId1, 1, new BigDecimal("100.00")));
 
         GlobalHandlerException ex = assertThrows(GlobalHandlerException.class,
-                () -> cartService.checkoutCart(customerId, ConfirmationType.SIGNATURE, null, latitude, longitude));
+                () -> cartService.checkoutCart(customerId, ConfirmationType.SIGNATURE, null, latitude, longitude, address));
 
         assertEquals(HttpStatus.BAD_REQUEST, ex.getStatus());
         assertEquals("Signature is required for SIGNATURE confirmation type", ex.getMessage());
@@ -401,7 +403,7 @@ verify(eventPublisher, never()).publishEvent(eq(EventsConstants.ORDER_PLACED), a
         when(cartRepository.findByCustomerIdAndArchived(customerId, false)).thenReturn(Optional.of(cart));
 
         GlobalHandlerException ex = assertThrows(GlobalHandlerException.class,
-                () -> cartService.checkoutCart(customerId, ConfirmationType.OTP, null, latitude, longitude));
+                () -> cartService.checkoutCart(customerId, ConfirmationType.OTP, null, latitude, longitude, address));
 
         assertEquals(HttpStatus.BAD_REQUEST, ex.getStatus());
         assertEquals("Cannot checkout an empty cart.", ex.getMessage());
@@ -424,7 +426,7 @@ verify(eventPublisher, never()).publishEvent(eq(EventsConstants.ORDER_PLACED), a
                 .publishEvent(eq(EventsConstants.ORDER_PLACED), any(CartCheckedoutEvent.class));
 
         RuntimeException ex = assertThrows(RuntimeException.class,
-                () -> cartService.checkoutCart(customerId, ConfirmationType.QR_CODE, null, latitude, longitude));
+                () -> cartService.checkoutCart(customerId, ConfirmationType.QR_CODE, null, latitude, longitude, address));
 
         assertTrue(ex.getMessage().contains("Checkout process failed: Could not publish event."));
         verify(cartRepository, never()).save(any(Cart.class));
