@@ -3,40 +3,41 @@ package cart.service;
 import cart.exception.GlobalHandlerException;
 import cart.model.Cart;
 import cart.model.CartItem;
-import cart.model.OrderRequest;
 import cart.model.PromoCode;
 import cart.repository.CartRepository;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+
+import com.podzilla.mq.EventPublisher;
+import com.podzilla.mq.EventsConstants;
+import com.podzilla.mq.events.CartCheckedoutEvent;
+import com.podzilla.mq.events.ConfirmationType;
+import com.podzilla.mq.events.DeliveryAddress;
+import com.podzilla.mq.events.OrderItem;
 
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @Slf4j
 public class CartService {
 
     private final CartRepository cartRepository;
-    private final RabbitTemplate rabbitTemplate;
+    private final EventPublisher eventPublisher;
     private final PromoCodeService promoCodeService;
 
-    @Value("${rabbitmq.exchange.name}")
-    private String exchangeName;
-    @Value("${rabbitmq.routing.key.checkout}")
-    private String checkoutRoutingKey;
-
     public CartService(final CartRepository cartRepository,
-                       final RabbitTemplate rabbitTemplate,
-                       final PromoCodeService promoCodeService) {
+                      final EventPublisher eventPublisher,
+                      final PromoCodeService promoCodeService) {
         this.cartRepository = cartRepository;
-        this.rabbitTemplate = rabbitTemplate;
+        this.eventPublisher = eventPublisher;
         this.promoCodeService = promoCodeService;
     }
 
@@ -250,8 +251,10 @@ public class CartService {
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
-    public Cart checkoutCart(final String customerId) {
-        log.debug("Entering checkoutCart [RabbitMQ] for customerId: {}", customerId);
+    public Cart checkoutCart(final String customerId, final ConfirmationType confirmationType,
+     final String signature, final Double longitude, final Double latitude, DeliveryAddress address) {
+        log.debug("Entering checkoutCart for customerId: {} with confirmationType: {}", 
+                customerId, confirmationType);
         Cart cart = getActiveCart(customerId);
 
         recalculateCartTotals(cart);
@@ -261,21 +264,34 @@ public class CartService {
             throw new GlobalHandlerException(HttpStatus.BAD_REQUEST, "Cannot checkout an empty cart.");
         }
 
-        OrderRequest checkoutEvent = new OrderRequest(
-                UUID.randomUUID().toString(),
-                customerId,
-                cart.getId(),
-                new ArrayList<>(cart.getItems()),
-                cart.getSubTotal(),
-                cart.getDiscountAmount(),
-                cart.getTotalPrice(),
-                cart.getAppliedPromoCode()
-        );
+        if (confirmationType == ConfirmationType.SIGNATURE && (signature == null || signature.trim().isEmpty())) {
+            throw new GlobalHandlerException(HttpStatus.BAD_REQUEST, "Signature is required for SIGNATURE confirmation type");
+        }
+
+        List<OrderItem> orderItems = cart.getItems().stream()
+                .map(cartItem -> OrderItem.builder()
+                        .productId(cartItem.getProductId())
+                        .quantity(cartItem.getQuantity())
+                        .pricePerUnit(cartItem.getUnitPrice())
+                        .build())
+                .collect(Collectors.toList());
+
+        CartCheckedoutEvent checkoutEvent = CartCheckedoutEvent.builder()
+                .cartId(cart.getId())
+                .customerId(customerId)
+                .items(orderItems) 
+                .totalAmount(cart.getTotalPrice())
+                .deliveryAddress(address)
+                .orderLatitude(latitude != null ? latitude : 0.0)
+                .orderLongitude(longitude != null ? longitude : 0.0)
+                .signature(signature)
+                .confirmationType(confirmationType)
+                .build();
 
         try {
-            log.debug("Publishing checkout event for cartId: {} with totals: Sub={}, Discount={}, Total={}",
-                    cart.getId(), cart.getSubTotal(), cart.getDiscountAmount(), cart.getTotalPrice());
-            rabbitTemplate.convertAndSend(exchangeName, checkoutRoutingKey, checkoutEvent);
+            log.debug("Publishing checkout event for cartId: {} with totals: Sub={}, Discount={}, Total={}, ConfirmationType={}",
+                    cart.getId(), cart.getSubTotal(), cart.getDiscountAmount(), cart.getTotalPrice(), confirmationType);
+            eventPublisher.publishEvent(EventsConstants.ORDER_PLACED, checkoutEvent);
 
             log.info("Checkout event published successfully for cartId: {}. Clearing cart.", cart.getId());
             cart.getItems().clear();

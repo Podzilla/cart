@@ -2,7 +2,6 @@ package service;
 import cart.exception.GlobalHandlerException;
 import cart.model.Cart;
 import cart.model.CartItem;
-import cart.model.OrderRequest;
 import cart.model.PromoCode;
 import cart.repository.CartRepository;
 import cart.service.CartService;
@@ -17,6 +16,12 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.test.util.ReflectionTestUtils;
+
+import com.podzilla.mq.EventPublisher;
+import com.podzilla.mq.EventsConstants;
+import com.podzilla.mq.events.CartCheckedoutEvent;
+import com.podzilla.mq.events.ConfirmationType;
+import com.podzilla.mq.events.DeliveryAddress;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -36,7 +41,7 @@ class CartServiceTest {
     private CartRepository cartRepository;
 
     @Mock
-    private RabbitTemplate rabbitTemplate;
+    private EventPublisher eventPublisher;  // Replace RabbitTemplate with EventPublisher
 
     @Mock
     private PromoCodeService promoCodeService;
@@ -51,9 +56,12 @@ class CartServiceTest {
     private final String customerId = "cust123";
     private final String productId1 = "prod1";
     private final String productId2 = "prod2";
+    private final Double latitude = 77.12;
+    private final Double longitude = 77.12;
     private final BigDecimal price1 = new BigDecimal("10.50");
     private final BigDecimal price2 = new BigDecimal("5.00");
     private final String cartId = UUID.randomUUID().toString();
+    private final DeliveryAddress address = new DeliveryAddress("123 Main St", "City", "State", "Country", "12345");
 
     private final String exchangeName = "test.cart.events";
     private final String checkoutRoutingKey = "test.order.checkout.initiate";
@@ -81,9 +89,11 @@ class CartServiceTest {
         item1Input = new CartItem(productId1, 1, price1);
         item2Input = new CartItem(productId2, 2, price2);
 
-        ReflectionTestUtils.setField(cartService, "exchangeName", exchangeName);
-        ReflectionTestUtils.setField(cartService, "checkoutRoutingKey", checkoutRoutingKey);
+        // Remove these lines as they're no longer needed
+        // ReflectionTestUtils.setField(cartService, "exchangeName", exchangeName);
+        // ReflectionTestUtils.setField(cartService, "checkoutRoutingKey", checkoutRoutingKey);
 
+        // Rest of the setup remains the same
         lenient().when(cartRepository.save(any(Cart.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         lenient().when(cartRepository.findByCustomerId(anyString())).thenReturn(Optional.empty());
@@ -335,21 +345,22 @@ class CartServiceTest {
         PromoCode promo = createTestPromoCode("SAVE10", PromoCode.DiscountType.PERCENTAGE, new BigDecimal("10"), null, null, true);
         when(promoCodeService.getActivePromoCode("SAVE10")).thenReturn(Optional.of(promo));
 
-        doNothing().when(rabbitTemplate).convertAndSend(anyString(), anyString(), any(OrderRequest.class));
+        doNothing().when(eventPublisher).publishEvent(eq(EventsConstants.ORDER_PLACED), any(CartCheckedoutEvent.class));
 
-        Cart result = cartService.checkoutCart(customerId);
+        Cart result = cartService.checkoutCart(customerId, ConfirmationType.OTP, "", latitude, longitude, address);
 
-        ArgumentCaptor<OrderRequest> eventCaptor = ArgumentCaptor.forClass(OrderRequest.class);
-        verify(rabbitTemplate).convertAndSend(eq(exchangeName), eq(checkoutRoutingKey), eventCaptor.capture());
-        OrderRequest publishedEvent = eventCaptor.getValue();
+        ArgumentCaptor<CartCheckedoutEvent> eventCaptor = ArgumentCaptor.forClass(CartCheckedoutEvent.class);
+        verify(eventPublisher).publishEvent(eq(EventsConstants.ORDER_PLACED), eventCaptor.capture());
+        CartCheckedoutEvent publishedEvent = eventCaptor.getValue();
 
         assertEquals(customerId, publishedEvent.getCustomerId());
         assertEquals(cartId, publishedEvent.getCartId());
         assertEquals(1, publishedEvent.getItems().size());
-        assertEquals(new BigDecimal("100.00").setScale(2), publishedEvent.getSubTotal());
-        assertEquals(new BigDecimal("10.00").setScale(2), publishedEvent.getDiscountAmount());
-        assertEquals(new BigDecimal("90.00").setScale(2), publishedEvent.getTotalPrice());
-        assertEquals("SAVE10", publishedEvent.getAppliedPromoCode());
+        // assertEquals(new BigDecimal("100.00").setScale(2), publishedEvent().getSubTotal());
+        // assertEquals(new BigDecimal("10.00").setScale(2), publishedEvent.getDiscountAmount());
+        assertEquals(new BigDecimal("90.00").setScale(2), publishedEvent.getTotalAmount());
+        // assertEquals("SAVE10", publishedEvent.getAppliedPromoCode());S
+        assertEquals(ConfirmationType.OTP, publishedEvent.getConfirmationType());
 
         assertTrue(result.getItems().isEmpty());
         assertNull(result.getAppliedPromoCode());
@@ -361,15 +372,42 @@ class CartServiceTest {
     }
 
     @Test
+    void checkoutCart_withSignature_publishesEventWithSignature() {
+        cart.getItems().add(new CartItem(productId1, 1, new BigDecimal("100.00")));
+        String signature = "customer_signature_data";
+
+        Cart result = cartService.checkoutCart(customerId, ConfirmationType.SIGNATURE, signature, latitude, longitude, address);
+
+        ArgumentCaptor<CartCheckedoutEvent> eventCaptor = ArgumentCaptor.forClass(CartCheckedoutEvent.class);
+        verify(eventPublisher).publishEvent(eq(EventsConstants.ORDER_PLACED), eventCaptor.capture());
+        CartCheckedoutEvent publishedEvent = eventCaptor.getValue();
+
+        assertEquals(ConfirmationType.SIGNATURE, publishedEvent.getConfirmationType());
+        assertEquals(signature, publishedEvent.getSignature());
+    }
+
+    @Test
+    void checkoutCart_signatureTypeWithoutSignature_throwsException() {
+        cart.getItems().add(new CartItem(productId1, 1, new BigDecimal("100.00")));
+
+        GlobalHandlerException ex = assertThrows(GlobalHandlerException.class,
+                () -> cartService.checkoutCart(customerId, ConfirmationType.SIGNATURE, null, latitude, longitude, address));
+
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatus());
+        assertEquals("Signature is required for SIGNATURE confirmation type", ex.getMessage());
+verify(eventPublisher, never()).publishEvent(eq(EventsConstants.ORDER_PLACED), any(CartCheckedoutEvent.class));
+    }
+
+    @Test
     void checkoutCart_emptyCart_throwsGlobalHandlerException() {
         when(cartRepository.findByCustomerIdAndArchived(customerId, false)).thenReturn(Optional.of(cart));
 
         GlobalHandlerException ex = assertThrows(GlobalHandlerException.class,
-                () -> cartService.checkoutCart(customerId));
+                () -> cartService.checkoutCart(customerId, ConfirmationType.OTP, null, latitude, longitude, address));
 
         assertEquals(HttpStatus.BAD_REQUEST, ex.getStatus());
         assertEquals("Cannot checkout an empty cart.", ex.getMessage());
-        verify(rabbitTemplate, never()).convertAndSend(anyString(), anyString(), any(OrderRequest.class));
+verify(eventPublisher, never()).publishEvent(eq(EventsConstants.ORDER_PLACED), any(CartCheckedoutEvent.class));
     }
 
     @Test
@@ -384,11 +422,11 @@ class CartServiceTest {
         cart.setTotalPrice(new BigDecimal(formattedSubTotal));
         cart.setDiscountAmount(new BigDecimal(formattedBigZero));
 
-        doThrow(new RuntimeException("RabbitMQ publish error")).when(rabbitTemplate)
-                .convertAndSend(eq(exchangeName), eq(checkoutRoutingKey), any(OrderRequest.class));
+        doThrow(new RuntimeException("Event publish error")).when(eventPublisher)
+                .publishEvent(eq(EventsConstants.ORDER_PLACED), any(CartCheckedoutEvent.class));
 
         RuntimeException ex = assertThrows(RuntimeException.class,
-                () -> cartService.checkoutCart(customerId));
+                () -> cartService.checkoutCart(customerId, ConfirmationType.QR_CODE, null, latitude, longitude, address));
 
         assertTrue(ex.getMessage().contains("Checkout process failed: Could not publish event."));
         verify(cartRepository, never()).save(any(Cart.class));
