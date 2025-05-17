@@ -20,5 +20,5 @@ public class OrderRequest {
     private BigDecimal discountAmount;
     private BigDecimal totalPrice;
     private String appliedPromoCode;
-
+    private DeliveryAddress shippingAddress;
 }

@@ -32,9 +32,12 @@ public class Cart {
     private String appliedPromoCode;
 
     private BigDecimal subTotal = BigDecimal.ZERO;
+
     private BigDecimal discountAmount = BigDecimal.ZERO;
+
     private BigDecimal totalPrice = BigDecimal.ZERO;
 
+    private DeliveryAddress shippingAddress;
 
 }
 

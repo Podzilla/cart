@@ -74,6 +74,11 @@
             <scope>runtime</scope>
         </dependency>
 
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-webflux</artifactId>
+        </dependency>
+
         <!-- Testing -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -142,6 +147,11 @@
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
+        <dependency>
+            <groupId>com.github.Podzilla</groupId>
+            <artifactId>podzilla-utils-lib</artifactId>
+            <version>v1.1.6</version>
+        </dependency>
         <!-- WireMock for Testing -->
         <dependency>
             <groupId>com.github.tomakehurst</groupId>
@@ -150,6 +160,15 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
+
+    <repositories>
+        <repository>
+            <id>jitpack.io</id>
+            <url>https://jitpack.io</url>
+        </repository>
+    </repositories>
+
+
 
 
     <build>

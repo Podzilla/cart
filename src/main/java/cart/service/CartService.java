@@ -1,16 +1,15 @@
 package cart.service;
 
 import cart.exception.GlobalHandlerException;
-import cart.model.Cart;
-import cart.model.CartItem;
-import cart.model.OrderRequest;
-import cart.model.PromoCode;
+import cart.model.*;
 import cart.repository.CartRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.RestTemplate;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -26,18 +25,25 @@ public class CartService {
     private final CartRepository cartRepository;
     private final RabbitTemplate rabbitTemplate;
     private final PromoCodeService promoCodeService;
+    private final RestTemplate restTemplate;
+
 
     @Value("${rabbitmq.exchange.name}")
     private String exchangeName;
     @Value("${rabbitmq.routing.key.checkout}")
     private String checkoutRoutingKey;
+    @Value("${auth.service.base.url}")
+    private String authServiceBaseUrl;
+
 
     public CartService(final CartRepository cartRepository,
                        final RabbitTemplate rabbitTemplate,
-                       final PromoCodeService promoCodeService) {
+                       final PromoCodeService promoCodeService,
+                       final RestTemplate restTemplate) {
         this.cartRepository = cartRepository;
         this.rabbitTemplate = rabbitTemplate;
         this.promoCodeService = promoCodeService;
+        this.restTemplate = restTemplate;
     }
 
     public Cart createCart(final String customerId) {
@@ -52,7 +58,8 @@ public class CartService {
                             null,
                             BigDecimal.ZERO.setScale(2),
                             BigDecimal.ZERO.setScale(2),
-                            BigDecimal.ZERO.setScale(2)
+                            BigDecimal.ZERO.setScale(2),
+                            null
                     );
                     log.debug("Cart created: {}", newCart);
                     return cartRepository.save(newCart);
@@ -261,6 +268,9 @@ public class CartService {
             throw new GlobalHandlerException(HttpStatus.BAD_REQUEST, "Cannot checkout an empty cart.");
         }
 
+        DeliveryAddress shippingAddress = getCustomerShippingAddress(customerId);
+        cart.setShippingAddress(shippingAddress);
+
         OrderRequest checkoutEvent = new OrderRequest(
                 UUID.randomUUID().toString(),
                 customerId,
@@ -269,7 +279,8 @@ public class CartService {
                 cart.getSubTotal(),
                 cart.getDiscountAmount(),
                 cart.getTotalPrice(),
-                cart.getAppliedPromoCode()
+                cart.getAppliedPromoCode(),
+                cart.getShippingAddress()
         );
 
         try {
@@ -290,4 +301,36 @@ public class CartService {
             throw new RuntimeException("Checkout process failed: Could not publish event.", e);
         }
     }
+
+    private DeliveryAddress getCustomerShippingAddress(final String customerId) {
+        log.debug("Fetching shipping address for customerId: {} " +
+                "from Auth Service using RestTemplate", customerId);
+        String url = authServiceBaseUrl + "/customer/detailes/{customerId}";
+        try {
+            CustomerDetailsResponse customerDetails = restTemplate.getForObject(
+                    url,
+                    CustomerDetailsResponse.class,
+                    customerId
+            );
+
+            if (customerDetails != null && customerDetails.getAddress() != null) {
+                log.debug("Successfully fetched shipping address for customerId: {}", customerId);
+                return customerDetails.getAddress();
+            } else {
+                log.warn("Customer details found but address is null or blank for customerId: {}", customerId);
+                throw new GlobalHandlerException(HttpStatus.BAD_REQUEST, "Shipping address not available for customer.");
+            }
+        } catch (HttpClientErrorException e) {
+            if (e.getStatusCode() == HttpStatus.NOT_FOUND) {
+                log.error("Customer details not found for customerId: {}. Status: {}", customerId, e.getStatusCode());
+                throw new GlobalHandlerException(HttpStatus.NOT_FOUND, "Customer details not found for checkout.");
+            } else {
+                log.error("Error fetching customer details for customerId: {}. Status: {}, Response: {}",
+                        customerId, e.getStatusCode(), e.getResponseBodyAsString());
+                throw new RuntimeException("Failed to fetch customer details: " + e.getMessage(), e);
+            }
+        }
+    }
+
+
 }

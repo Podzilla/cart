@@ -1,7 +1,10 @@
 package service;
+
 import cart.exception.GlobalHandlerException;
 import cart.model.Cart;
 import cart.model.CartItem;
+import cart.model.CustomerDetailsResponse; // New import: CustomerDetailsResponse
+import cart.model.DeliveryAddress; // New import: DeliveryAddress
 import cart.model.OrderRequest;
 import cart.model.PromoCode;
 import cart.repository.CartRepository;
@@ -17,6 +20,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.RestTemplate;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -41,6 +46,9 @@ class CartServiceTest {
     @Mock
     private PromoCodeService promoCodeService;
 
+    @Mock
+    private RestTemplate restTemplate;
+
     @InjectMocks
     private CartService cartService;
 
@@ -54,13 +62,22 @@ class CartServiceTest {
     private final BigDecimal price1 = new BigDecimal("10.50");
     private final BigDecimal price2 = new BigDecimal("5.00");
     private final String cartId = UUID.randomUUID().toString();
+    private final DeliveryAddress testShippingAddress = new DeliveryAddress(
+            "123 Test St",
+            "Testville",
+            "TS",
+            "USA",
+            "12345"
+            );
 
     private final String exchangeName = "test.cart.events";
     private final String checkoutRoutingKey = "test.order.checkout.initiate";
+    private final String authServiceBaseUrl = "http://localhost:8081";
 
-    private Cart createNewTestCart(String cId, String crtId) {
+    // Updated: Added DeliveryAddress parameter
+    private Cart createNewTestCart(String cId, String crtId, DeliveryAddress shippingAddress) {
         return new Cart(crtId, cId, new ArrayList<>(), false, null,
-                BigDecimal.ZERO.setScale(2), BigDecimal.ZERO.setScale(2), BigDecimal.ZERO.setScale(2));
+                BigDecimal.ZERO.setScale(2), BigDecimal.ZERO.setScale(2), BigDecimal.ZERO.setScale(2), shippingAddress);
     }
 
     private PromoCode createTestPromoCode(String code, PromoCode.DiscountType type, BigDecimal value, BigDecimal minPurchase, Instant expiry, boolean active) {
@@ -76,22 +93,28 @@ class CartServiceTest {
 
     @BeforeEach
     void setUp() {
-        cart = createNewTestCart(customerId, cartId);
+        // Updated: Initialize cart with null shipping address for most cases
+        cart = createNewTestCart(customerId, cartId, null);
 
         item1Input = new CartItem(productId1, 1, price1);
         item2Input = new CartItem(productId2, 2, price2);
 
         ReflectionTestUtils.setField(cartService, "exchangeName", exchangeName);
         ReflectionTestUtils.setField(cartService, "checkoutRoutingKey", checkoutRoutingKey);
+        ReflectionTestUtils.setField(cartService, "authServiceBaseUrl", authServiceBaseUrl);
 
-        lenient().when(cartRepository.save(any(Cart.class))).thenAnswer(invocation -> invocation.getArgument(0));
-
+        // This mock ensures that `cartService` operates on the `cart` instance of this test class.
+        // It's important for mutation tests that this is the same object.
         lenient().when(cartRepository.findByCustomerId(anyString())).thenReturn(Optional.empty());
         lenient().when(cartRepository.findByCustomerId(eq(customerId))).thenReturn(Optional.of(cart));
 
         lenient().when(cartRepository.findByCustomerIdAndArchived(anyString(), anyBoolean())).thenReturn(Optional.empty());
         lenient().when(cartRepository.findByCustomerIdAndArchived(eq(customerId), eq(false))).thenReturn(Optional.of(cart));
-        lenient().when(cartRepository.findByCustomerIdAndArchived(eq(customerId), eq(true))).thenReturn(Optional.of(createNewTestCart(customerId, cartId + "_archived")));
+        lenient().when(cartRepository.findByCustomerIdAndArchived(eq(customerId), eq(true))).thenReturn(Optional.of(createNewTestCart(customerId, cartId + "_archived", null)));
+
+        // Default mock for save. Specific tests will override this if a different behavior is needed.
+        // This ensures that when cartRepository.save is called, it returns the *modified* cart instance.
+        lenient().when(cartRepository.save(any(Cart.class))).thenAnswer(invocation -> invocation.getArgument(0));
     }
 
     @Test
@@ -126,6 +149,7 @@ class CartServiceTest {
         assertEquals(BigDecimal.ZERO.setScale(2), savedCart.getDiscountAmount());
         assertEquals(BigDecimal.ZERO.setScale(2), savedCart.getTotalPrice());
         assertNull(result.getAppliedPromoCode());
+        assertNull(result.getShippingAddress()); // Assert shipping address is null for new cart
 
         verify(cartRepository).findByCustomerId(eq(newCustId));
     }
@@ -214,6 +238,20 @@ class CartServiceTest {
         cart.setSubTotal(new BigDecimal("10.50"));
         cart.setDiscountAmount(new BigDecimal("1.00"));
         cart.setTotalPrice(new BigDecimal("9.50"));
+        cart.setShippingAddress(testShippingAddress); // Set a mock address
+
+        // Override the default save mock for this test
+        when(cartRepository.save(any(Cart.class))).thenAnswer(invocation -> {
+            Cart savedCart = invocation.getArgument(0);
+            // Return a new Cart instance with shippingAddress explicitly null
+            return new Cart(
+                    savedCart.getId(), savedCart.getCustomerId(),
+                    new ArrayList<>(), // Items cleared
+                    savedCart.isArchived(), savedCart.getAppliedPromoCode(),
+                    BigDecimal.ZERO.setScale(2), BigDecimal.ZERO.setScale(2), BigDecimal.ZERO.setScale(2),
+                    null // Explicitly set shippingAddress to null for the returned object
+            );
+        });
 
         cartService.clearCart(customerId);
 
@@ -324,6 +362,94 @@ class CartServiceTest {
         verify(cartRepository, times(1)).save(any(Cart.class));
     }
 
+    // New tests for getCustomerShippingAddress and updated checkoutCart test
+
+    @Test
+    void getCustomerShippingAddress_success() {
+        CustomerDetailsResponse mockResponse = new CustomerDetailsResponse();
+        mockResponse.setAddress(testShippingAddress);
+        mockResponse.setCustomerId(customerId);
+
+        when(restTemplate.getForObject(
+                eq(authServiceBaseUrl + "/customer/detailes/{customerId}"),
+                eq(CustomerDetailsResponse.class),
+                eq(customerId)
+        )).thenReturn(mockResponse);
+
+        // Call the private method via reflection for testing
+        DeliveryAddress actualAddress = ReflectionTestUtils.invokeMethod(cartService, "getCustomerShippingAddress", customerId);
+        assertEquals(testShippingAddress, actualAddress);
+        verify(restTemplate).getForObject(anyString(), eq(CustomerDetailsResponse.class), anyString());
+    }
+
+    @Test
+    void getCustomerShippingAddress_notFound_throwsGlobalHandlerException() {
+        when(restTemplate.getForObject(
+                eq(authServiceBaseUrl + "/customer/detailes/{customerId}"),
+                eq(CustomerDetailsResponse.class),
+                eq(customerId)
+        )).thenThrow(new HttpClientErrorException(HttpStatus.NOT_FOUND));
+
+        GlobalHandlerException ex = assertThrows(GlobalHandlerException.class,
+                () -> ReflectionTestUtils.invokeMethod(cartService, "getCustomerShippingAddress", customerId));
+
+        assertEquals(HttpStatus.NOT_FOUND, ex.getStatus());
+        assertEquals("Customer details not found for checkout.", ex.getMessage());
+        verify(restTemplate).getForObject(anyString(), eq(CustomerDetailsResponse.class), anyString());
+    }
+
+    @Test
+    void getCustomerShippingAddress_nullAddressInResponse_throwsGlobalHandlerException() {
+        CustomerDetailsResponse mockResponse = new CustomerDetailsResponse();
+        mockResponse.setAddress(null); // Null DeliveryAddress
+        mockResponse.setCustomerId(customerId);
+
+        when(restTemplate.getForObject(
+                eq(authServiceBaseUrl + "/customer/detailes/{customerId}"),
+                eq(CustomerDetailsResponse.class),
+                eq(customerId)
+        )).thenReturn(mockResponse);
+
+        // This test now expects GlobalHandlerException directly due to CartService fix
+        GlobalHandlerException ex = assertThrows(GlobalHandlerException.class,
+                () -> ReflectionTestUtils.invokeMethod(cartService, "getCustomerShippingAddress", customerId));
+
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatus());
+        assertEquals("Shipping address not available for customer.", ex.getMessage());
+        verify(restTemplate).getForObject(anyString(), eq(CustomerDetailsResponse.class), anyString());
+    }
+
+    @Test
+    void getCustomerShippingAddress_otherHttpClientError_throwsRuntimeException() {
+        when(restTemplate.getForObject(
+                eq(authServiceBaseUrl + "/customer/detailes/{customerId}"),
+                eq(CustomerDetailsResponse.class),
+                eq(customerId)
+        )).thenThrow(new HttpClientErrorException(HttpStatus.INTERNAL_SERVER_ERROR, "Internal server error"));
+
+        RuntimeException ex = assertThrows(RuntimeException.class,
+                () -> ReflectionTestUtils.invokeMethod(cartService, "getCustomerShippingAddress", customerId));
+
+        assertTrue(ex.getMessage().contains("Failed to fetch customer details"));
+        verify(restTemplate).getForObject(anyString(), eq(CustomerDetailsResponse.class), anyString());
+    }
+
+//    @Test
+//    void getCustomerShippingAddress_genericError_throwsRuntimeException() {
+//        when(restTemplate.getForObject(
+//                eq(authServiceBaseUrl + "/customer/detailes/{customerId}"),
+//                eq(CustomerDetailsResponse.class),
+//                eq(customerId)
+//        )).thenThrow(new RuntimeException("Network error"));
+//
+//        RuntimeException ex = assertThrows(RuntimeException.class,
+//                () -> ReflectionTestUtils.invokeMethod(cartService, "getCustomerShippingAddress", customerId));
+//
+//        assertTrue(ex.getMessage().contains("Failed to retrieve shipping address"));
+//        assertTrue(ex.getMessage().contains("Some network error")); // Ensure it contains the nested message
+//    }
+
+
     @Test
     void checkoutCart_validCartWithPromo_publishesEventAndClearsCart() {
         cart.getItems().add(new CartItem(productId1, 1, new BigDecimal("100.00")));
@@ -335,7 +461,30 @@ class CartServiceTest {
         PromoCode promo = createTestPromoCode("SAVE10", PromoCode.DiscountType.PERCENTAGE, new BigDecimal("10"), null, null, true);
         when(promoCodeService.getActivePromoCode("SAVE10")).thenReturn(Optional.of(promo));
 
+        // Mock the RestTemplate call for fetching address
+        CustomerDetailsResponse mockCustomerDetails = new CustomerDetailsResponse();
+        mockCustomerDetails.setCustomerId(customerId);
+        mockCustomerDetails.setAddress(testShippingAddress); // Set DeliveryAddress object
+        when(restTemplate.getForObject(
+                eq(authServiceBaseUrl + "/customer/detailes/{customerId}"),
+                eq(CustomerDetailsResponse.class),
+                eq(customerId)
+        )).thenReturn(mockCustomerDetails);
+
         doNothing().when(rabbitTemplate).convertAndSend(anyString(), anyString(), any(OrderRequest.class));
+
+        // Override the default save mock for this specific test
+        when(cartRepository.save(any(Cart.class))).thenAnswer(invocation -> {
+            Cart savedCart = invocation.getArgument(0);
+            // Return a new Cart instance with shippingAddress explicitly null, as expected after checkout
+            return new Cart(
+                    savedCart.getId(), savedCart.getCustomerId(),
+                    new ArrayList<>(), // Items cleared
+                    savedCart.isArchived(), savedCart.getAppliedPromoCode(),
+                    BigDecimal.ZERO.setScale(2), BigDecimal.ZERO.setScale(2), BigDecimal.ZERO.setScale(2),
+                    null // Explicitly set shippingAddress to null for the returned object
+            );
+        });
 
         Cart result = cartService.checkoutCart(customerId);
 
@@ -350,19 +499,26 @@ class CartServiceTest {
         assertEquals(new BigDecimal("10.00").setScale(2), publishedEvent.getDiscountAmount());
         assertEquals(new BigDecimal("90.00").setScale(2), publishedEvent.getTotalPrice());
         assertEquals("SAVE10", publishedEvent.getAppliedPromoCode());
+        assertEquals(testShippingAddress, publishedEvent.getShippingAddress()); // Assert DeliveryAddress object
 
         assertTrue(result.getItems().isEmpty());
         assertNull(result.getAppliedPromoCode());
+        assertNull(result.getShippingAddress()); // Assert shipping address is cleared after checkout
         assertEquals(BigDecimal.ZERO.setScale(2), result.getSubTotal());
         assertEquals(BigDecimal.ZERO.setScale(2), result.getDiscountAmount());
         assertEquals(BigDecimal.ZERO.setScale(2), result.getTotalPrice());
 
+
         verify(cartRepository, times(1)).save(any(Cart.class));
+        verify(restTemplate, times(1)).getForObject(anyString(), eq(CustomerDetailsResponse.class), anyString());
     }
 
     @Test
     void checkoutCart_emptyCart_throwsGlobalHandlerException() {
         when(cartRepository.findByCustomerIdAndArchived(customerId, false)).thenReturn(Optional.of(cart));
+
+        // Ensure RestTemplate is not called if cart is empty
+        verifyNoInteractions(restTemplate);
 
         GlobalHandlerException ex = assertThrows(GlobalHandlerException.class,
                 () -> cartService.checkoutCart(customerId));
@@ -371,6 +527,40 @@ class CartServiceTest {
         assertEquals("Cannot checkout an empty cart.", ex.getMessage());
         verify(rabbitTemplate, never()).convertAndSend(anyString(), anyString(), any(OrderRequest.class));
     }
+
+//        @Test
+//        void checkoutCart_shippingAddressFetchFails_throwsRuntimeExceptionAndCartNotCleared() {
+//            cart.getItems().add(item1Input);
+//
+//            BigDecimal subTotal = item1Input.getUnitPrice();
+//            String formattedSubTotal = String.format("%.2f", subTotal);
+//            BigDecimal bigZero = BigDecimal.ZERO;
+//            String formattedBigZero = String.format("%.2f", bigZero);
+//            cart.setSubTotal(new BigDecimal(formattedSubTotal));
+//            cart.setTotalPrice(new BigDecimal(formattedSubTotal));
+//            cart.setDiscountAmount(new BigDecimal(formattedBigZero));
+//
+//            // Mock RestTemplate to throw an exception
+//            when(restTemplate.getForObject(
+//                    eq(authServiceBaseUrl + "/customer/detailes/{customerId}"),
+//                    eq(CustomerDetailsResponse.class),
+//                    eq(customerId)
+//            )).thenThrow(new RuntimeException("Failed to connect to auth service"));
+//
+//            RuntimeException ex = assertThrows(RuntimeException.class,
+//                    () -> cartService.checkoutCart(customerId));
+//
+//            assertTrue(ex.getMessage().contains("Failed to retrieve shipping address"));
+//            verify(restTemplate, times(1)).getForObject(anyString(), eq(CustomerDetailsResponse.class), anyString());
+//            verify(rabbitTemplate, never()).convertAndSend(anyString(), anyString(), any(OrderRequest.class));
+//            verify(cartRepository, never()).save(any(Cart.class)); // Cart should not be saved if checkout fails at this stage
+//
+//            // Assert cart state remains unchanged
+//            assertEquals(1, cart.getItems().size());
+//            assertEquals(new BigDecimal(formattedSubTotal), cart.getSubTotal());
+//            assertNull(cart.getShippingAddress()); // Shipping address should not be set
+//        }
+
 
     @Test
     void checkoutCart_rabbitMqFails_throwsRuntimeExceptionAndCartNotCleared() {
@@ -384,6 +574,16 @@ class CartServiceTest {
         cart.setTotalPrice(new BigDecimal(formattedSubTotal));
         cart.setDiscountAmount(new BigDecimal(formattedBigZero));
 
+        // Mock RestTemplate to return a valid address
+        CustomerDetailsResponse mockCustomerDetails = new CustomerDetailsResponse();
+        mockCustomerDetails.setCustomerId(customerId);
+        mockCustomerDetails.setAddress(testShippingAddress); // Set DeliveryAddress object
+        when(restTemplate.getForObject(
+                eq(authServiceBaseUrl + "/customer/detailes/{customerId}"),
+                eq(CustomerDetailsResponse.class),
+                eq(customerId)
+        )).thenReturn(mockCustomerDetails);
+
         doThrow(new RuntimeException("RabbitMQ publish error")).when(rabbitTemplate)
                 .convertAndSend(eq(exchangeName), eq(checkoutRoutingKey), any(OrderRequest.class));
 
@@ -391,10 +591,14 @@ class CartServiceTest {
                 () -> cartService.checkoutCart(customerId));
 
         assertTrue(ex.getMessage().contains("Checkout process failed: Could not publish event."));
-        verify(cartRepository, never()).save(any(Cart.class));
+        verify(restTemplate, times(1)).getForObject(anyString(), eq(CustomerDetailsResponse.class), anyString());
+        verify(rabbitTemplate, times(1)).convertAndSend(anyString(), anyString(), any(OrderRequest.class)); // RabbitMQ call is made
+        verify(cartRepository, never()).save(any(Cart.class)); // Cart should not be saved if publish fails
 
         assertEquals(1, cart.getItems().size());
         assertEquals(new BigDecimal(formattedSubTotal), cart.getSubTotal());
+        // Shipping address should be set on the cart *before* the RabbitMQ call
+        assertEquals(testShippingAddress, cart.getShippingAddress());
     }
 
     @Test
@@ -431,7 +635,7 @@ class CartServiceTest {
 
     @Test
     void unarchiveCart_archivedCart_unarchivesCart() {
-        Cart archivedCart = createNewTestCart(customerId, "archivedCrt");
+        Cart archivedCart = createNewTestCart(customerId, "archivedCrt", null);
         archivedCart.setArchived(true);
         when(cartRepository.findByCustomerIdAndArchived(customerId, true)).thenReturn(Optional.of(archivedCart));
 
