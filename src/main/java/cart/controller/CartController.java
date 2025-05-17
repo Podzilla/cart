@@ -228,7 +228,8 @@ public class CartController {
             @PathVariable("customerId") final String customerId,
             @RequestParam(required = true) final ConfirmationType confirmationType,
             @RequestParam(required = false) final String signature) {
-        log.debug("Entering checkoutCart endpoint with customerId: {}, confirmationType: {}, signature: {}", 
+        log.debug("Entering checkoutCart endpoint with customerId: {}," +
+                        " confirmationType: {}, signature: {}",
                 customerId, confirmationType, signature);
         try {
             Cart updatedCart = cartService.checkoutCart(customerId, confirmationType, signature);

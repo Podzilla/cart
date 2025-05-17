@@ -8,10 +8,12 @@ import lombok.NoArgsConstructor;
 import java.math.BigDecimal;
 import java.util.List;
 
+import com.podzilla.mq.events.BaseEvent;
+
 @Data
 @NoArgsConstructor(force = true)
 @AllArgsConstructor
-public class OrderRequest {
+public class OrderRequest extends BaseEvent {
     private String eventId;
     private String customerId;
     private String cartId;
