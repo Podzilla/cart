@@ -3,6 +3,7 @@ package cart.service;
 import cart.exception.GlobalHandlerException;
 import cart.model.Cart;
 import cart.model.CartItem;
+import cart.model.ConfirmationType;
 import cart.model.OrderRequest;
 import cart.model.PromoCode;
 import cart.repository.CartRepository;
@@ -250,8 +251,9 @@ public class CartService {
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
-    public Cart checkoutCart(final String customerId) {
-        log.debug("Entering checkoutCart [RabbitMQ] for customerId: {}", customerId);
+    public Cart checkoutCart(final String customerId, final ConfirmationType confirmationType, final String signature) {
+        log.debug("Entering checkoutCart [RabbitMQ] for customerId: {} with confirmationType: {}", 
+                customerId, confirmationType);
         Cart cart = getActiveCart(customerId);
 
         recalculateCartTotals(cart);
@@ -259,6 +261,10 @@ public class CartService {
         if (cart.getItems().isEmpty()) {
             log.warn("Attempted checkout for customerId: {} with an empty cart.", customerId);
             throw new GlobalHandlerException(HttpStatus.BAD_REQUEST, "Cannot checkout an empty cart.");
+        }
+
+        if (confirmationType == ConfirmationType.SIGNATURE && (signature == null || signature.trim().isEmpty())) {
+            throw new GlobalHandlerException(HttpStatus.BAD_REQUEST, "Signature is required for SIGNATURE confirmation type");
         }
 
         OrderRequest checkoutEvent = new OrderRequest(
@@ -269,12 +275,14 @@ public class CartService {
                 cart.getSubTotal(),
                 cart.getDiscountAmount(),
                 cart.getTotalPrice(),
-                cart.getAppliedPromoCode()
+                cart.getAppliedPromoCode(),
+                confirmationType,
+                confirmationType == ConfirmationType.SIGNATURE ? signature : null
         );
 
         try {
-            log.debug("Publishing checkout event for cartId: {} with totals: Sub={}, Discount={}, Total={}",
-                    cart.getId(), cart.getSubTotal(), cart.getDiscountAmount(), cart.getTotalPrice());
+            log.debug("Publishing checkout event for cartId: {} with totals: Sub={}, Discount={}, Total={}, ConfirmationType={}",
+                    cart.getId(), cart.getSubTotal(), cart.getDiscountAmount(), cart.getTotalPrice(), confirmationType);
             rabbitTemplate.convertAndSend(exchangeName, checkoutRoutingKey, checkoutEvent);
 
             log.info("Checkout event published successfully for cartId: {}. Clearing cart.", cart.getId());

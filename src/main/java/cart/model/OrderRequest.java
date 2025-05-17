@@ -9,7 +9,7 @@ import java.math.BigDecimal;
 import java.util.List;
 
 @Data
-@NoArgsConstructor
+@NoArgsConstructor(force = true)
 @AllArgsConstructor
 public class OrderRequest {
     private String eventId;
@@ -20,5 +20,7 @@ public class OrderRequest {
     private BigDecimal discountAmount;
     private BigDecimal totalPrice;
     private String appliedPromoCode;
+    private final ConfirmationType confirmationType;
+    private String signature;
 
 }

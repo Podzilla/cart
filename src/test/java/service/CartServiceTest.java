@@ -2,6 +2,7 @@ package service;
 import cart.exception.GlobalHandlerException;
 import cart.model.Cart;
 import cart.model.CartItem;
+import cart.model.ConfirmationType;
 import cart.model.OrderRequest;
 import cart.model.PromoCode;
 import cart.repository.CartRepository;
@@ -337,7 +338,7 @@ class CartServiceTest {
 
         doNothing().when(rabbitTemplate).convertAndSend(anyString(), anyString(), any(OrderRequest.class));
 
-        Cart result = cartService.checkoutCart(customerId);
+        Cart result = cartService.checkoutCart(customerId, ConfirmationType.OTP, null);
 
         ArgumentCaptor<OrderRequest> eventCaptor = ArgumentCaptor.forClass(OrderRequest.class);
         verify(rabbitTemplate).convertAndSend(eq(exchangeName), eq(checkoutRoutingKey), eventCaptor.capture());
@@ -350,6 +351,7 @@ class CartServiceTest {
         assertEquals(new BigDecimal("10.00").setScale(2), publishedEvent.getDiscountAmount());
         assertEquals(new BigDecimal("90.00").setScale(2), publishedEvent.getTotalPrice());
         assertEquals("SAVE10", publishedEvent.getAppliedPromoCode());
+        assertEquals(ConfirmationType.OTP, publishedEvent.getConfirmationType());
 
         assertTrue(result.getItems().isEmpty());
         assertNull(result.getAppliedPromoCode());
@@ -361,11 +363,38 @@ class CartServiceTest {
     }
 
     @Test
+    void checkoutCart_withSignature_publishesEventWithSignature() {
+        cart.getItems().add(new CartItem(productId1, 1, new BigDecimal("100.00")));
+        String signature = "customer_signature_data";
+
+        Cart result = cartService.checkoutCart(customerId, ConfirmationType.SIGNATURE, signature);
+
+        ArgumentCaptor<OrderRequest> eventCaptor = ArgumentCaptor.forClass(OrderRequest.class);
+        verify(rabbitTemplate).convertAndSend(eq(exchangeName), eq(checkoutRoutingKey), eventCaptor.capture());
+        OrderRequest publishedEvent = eventCaptor.getValue();
+
+        assertEquals(ConfirmationType.SIGNATURE, publishedEvent.getConfirmationType());
+        assertEquals(signature, publishedEvent.getSignature());
+    }
+
+    @Test
+    void checkoutCart_signatureTypeWithoutSignature_throwsException() {
+        cart.getItems().add(new CartItem(productId1, 1, new BigDecimal("100.00")));
+
+        GlobalHandlerException ex = assertThrows(GlobalHandlerException.class,
+                () -> cartService.checkoutCart(customerId, ConfirmationType.SIGNATURE, null));
+
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatus());
+        assertEquals("Signature is required for SIGNATURE confirmation type", ex.getMessage());
+        verify(rabbitTemplate, never()).convertAndSend(anyString(), anyString(), any(OrderRequest.class));
+    }
+
+    @Test
     void checkoutCart_emptyCart_throwsGlobalHandlerException() {
         when(cartRepository.findByCustomerIdAndArchived(customerId, false)).thenReturn(Optional.of(cart));
 
         GlobalHandlerException ex = assertThrows(GlobalHandlerException.class,
-                () -> cartService.checkoutCart(customerId));
+                () -> cartService.checkoutCart(customerId, ConfirmationType.OTP, null));
 
         assertEquals(HttpStatus.BAD_REQUEST, ex.getStatus());
         assertEquals("Cannot checkout an empty cart.", ex.getMessage());
@@ -388,7 +417,7 @@ class CartServiceTest {
                 .convertAndSend(eq(exchangeName), eq(checkoutRoutingKey), any(OrderRequest.class));
 
         RuntimeException ex = assertThrows(RuntimeException.class,
-                () -> cartService.checkoutCart(customerId));
+                () -> cartService.checkoutCart(customerId, ConfirmationType.QR_CODE, null));
 
         assertTrue(ex.getMessage().contains("Checkout process failed: Could not publish event."));
         verify(cartRepository, never()).save(any(Cart.class));

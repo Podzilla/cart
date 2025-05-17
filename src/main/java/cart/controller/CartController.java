@@ -21,6 +21,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestBody;
 import cart.model.CartItem;
+import cart.model.ConfirmationType;
 import io.swagger.v3.oas.annotations.media.Content;
 
 @RestController
@@ -224,18 +225,18 @@ public class CartController {
     })
     @PostMapping("/{customerId}/checkout")
     public ResponseEntity<Cart> checkoutCart(
-            @PathVariable("customerId") final String customerId) {
-        log.debug("Entering checkoutCart"
-                + " endpoint with customerId:", customerId);
+            @PathVariable("customerId") final String customerId,
+            @RequestParam(required = true) final ConfirmationType confirmationType,
+            @RequestParam(required = false) final String signature) {
+        log.debug("Entering checkoutCart endpoint with customerId: {}, confirmationType: {}, signature: {}", 
+                customerId, confirmationType, signature);
         try {
-            Cart updatedCart = cartService.checkoutCart(customerId);
+            Cart updatedCart = cartService.checkoutCart(customerId, confirmationType, signature);
             log.debug("Cart checked out: {}", updatedCart);
             return ResponseEntity.ok(updatedCart);
         } catch (Exception ex) {
-            log.error("Error during checkout"
-                    + " for customerId: {}", customerId, ex);
-            throw new IllegalCallerException("Error "
-                    + "communicating with Order Service");
+            log.error("Error during checkout for customerId: {}", customerId, ex);
+            throw new IllegalCallerException("Error communicating with Order Service");
         }
     }
 
