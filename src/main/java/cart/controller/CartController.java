@@ -49,8 +49,7 @@ public class CartController {
                     description = "Internal server error",
                     content = @Content)
     })
-       
-    
+
     @PostMapping("/create")
     public ResponseEntity<Cart> createCart(
             @RequestHeader("X-User-Id") final String customerId) {
