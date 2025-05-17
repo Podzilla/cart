@@ -18,7 +18,8 @@ public class RemoveItemCommand implements CartCommand {
 
     @Override
     public Cart execute() {
-        log.debug("Executing RemoveItemCommand for customerId: {}, productId: {}", customerId, productId);
+        log.debug("Executing RemoveItemCommand for customerId: "
+                + "{}, productId: {}", customerId, productId);
         Cart cart = cartService.getCartByCustomerId(customerId);
 
         Optional<CartItem> itemToRemove = cart.getItems().stream()
@@ -26,7 +27,8 @@ public class RemoveItemCommand implements CartCommand {
                 .findFirst();
 
         if (itemToRemove.isPresent()) {
-            removedItem = new CartItem(itemToRemove.get().getProductId(), itemToRemove.get().getQuantity());
+            removedItem = new CartItem(itemToRemove.get().getProductId(),
+                    itemToRemove.get().getQuantity(), itemToRemove.get().getUnitPrice());
             cart.getItems().removeIf(i -> i.getProductId().equals(productId));
             log.debug("Item removed for productId: {}", productId);
         } else {

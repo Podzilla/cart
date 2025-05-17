@@ -238,4 +238,45 @@ public class CartController {
                     + "communicating with Order Service");
         }
     }
+
+    @Operation(summary = "Apply a promo code to the cart")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200",
+                    description = "Promo code applied successfully"),
+            @ApiResponse(responseCode = "400",
+                    description = "Invalid or expired promo code"),
+            @ApiResponse(responseCode = "404",
+                    description = "Active cart not found")
+    })
+    @PostMapping("/{customerId}/promo/{promoCode}")
+    public ResponseEntity<Cart> applyPromoCode(
+            @PathVariable("customerId") final String customerId,
+            @PathVariable("promoCode") final String promoCode) {
+        log.debug("Entering applyPromoCode endpoint with "
+                + "customerId: {}, promoCode: {}",
+                customerId, promoCode);
+        Cart updatedCart = cartService.applyPromoCode(
+                customerId, promoCode);
+        log.debug("Promo code applied, updated cart: "
+                + "{}", updatedCart);
+        return ResponseEntity.ok(updatedCart);
+    }
+
+    @Operation(summary = "Remove the applied promo code from the cart")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200",
+                    description = "Promo code removed successfully"),
+            @ApiResponse(responseCode = "404",
+                    description = "Active cart not found")
+    })
+    @DeleteMapping("/{customerId}/promo")
+    public ResponseEntity<Cart> removePromoCode(
+            @PathVariable("customerId") final String customerId) {
+        log.debug("Entering removePromoCode "
+                + "endpoint with customerId: {}", customerId);
+        Cart updatedCart = cartService.removePromoCode(customerId);
+        log.debug("Promo code removed (if any),"
+                + " updated cart: {}", updatedCart);
+        return ResponseEntity.ok(updatedCart);
+    }
 }

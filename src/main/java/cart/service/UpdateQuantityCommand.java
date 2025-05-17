@@ -73,7 +73,7 @@ public class UpdateQuantityCommand implements CartCommand {
         if (previousQuantity <= 0) {
             log.debug("Restoring removed item during "
                     + "undo for productId: {}", productId);
-            cart.getItems().add(new CartItem(productId, previousQuantity));
+            cart.getItems().add(new CartItem(productId, previousQuantity, existingItemOpt.get().getUnitPrice()));
         } else if (existingItemOpt.isPresent()) {
             log.debug("Restoring previous quantity "
                     + "during undo for productId: {}", productId);
@@ -81,7 +81,7 @@ public class UpdateQuantityCommand implements CartCommand {
         } else {
             log.debug("Adding item back during"
                     + " undo for productId: {}", productId);
-            cart.getItems().add(new CartItem(productId, previousQuantity));
+            cart.getItems().add(new CartItem(productId, previousQuantity, existingItemOpt.get().getUnitPrice()));
         }
 
         Cart updatedCart = cartService.saveCart(cart);
