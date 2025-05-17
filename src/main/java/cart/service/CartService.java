@@ -252,8 +252,8 @@ public class CartService {
     }
 
     public Cart checkoutCart(final String customerId, final ConfirmationType confirmationType,
-     final String signature, final Double longitude, final Double latitude, DeliveryAddress address) {
-        log.debug("Entering checkoutCart for customerId: {} with confirmationType: {}", 
+     final String signature, final Double longitude, final Double latitude, final DeliveryAddress address) {
+        log.debug("Entering checkoutCart for customerId: {} with confirmationType: {}",
                 customerId, confirmationType);
         Cart cart = getActiveCart(customerId);
 
@@ -265,7 +265,8 @@ public class CartService {
         }
 
         if (confirmationType == ConfirmationType.SIGNATURE && (signature == null || signature.trim().isEmpty())) {
-            throw new GlobalHandlerException(HttpStatus.BAD_REQUEST, "Signature is required for SIGNATURE confirmation type");
+            throw new GlobalHandlerException(HttpStatus.BAD_REQUEST,
+                    "Signature is required for SIGNATURE confirmation type");
         }
 
         List<OrderItem> orderItems = cart.getItems().stream()
@@ -279,7 +280,7 @@ public class CartService {
         CartCheckedoutEvent checkoutEvent = CartCheckedoutEvent.builder()
                 .cartId(cart.getId())
                 .customerId(customerId)
-                .items(orderItems) 
+                .items(orderItems)
                 .totalAmount(cart.getTotalPrice())
                 .deliveryAddress(address)
                 .orderLatitude(latitude != null ? latitude : 0.0)
@@ -289,8 +290,10 @@ public class CartService {
                 .build();
 
         try {
-            log.debug("Publishing checkout event for cartId: {} with totals: Sub={}, Discount={}, Total={}, ConfirmationType={}",
-                    cart.getId(), cart.getSubTotal(), cart.getDiscountAmount(), cart.getTotalPrice(), confirmationType);
+            log.debug("Publishing checkout event for cartId: {} with totals: Sub={},"
+                            + " Discount={}, Total={}, ConfirmationType={}",
+                    cart.getId(), cart.getSubTotal(), cart.getDiscountAmount(),
+                    cart.getTotalPrice(), confirmationType);
             eventPublisher.publishEvent(EventsConstants.ORDER_PLACED, checkoutEvent);
 
             log.info("Checkout event published successfully for cartId: {}. Clearing cart.", cart.getId());

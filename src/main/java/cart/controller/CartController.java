@@ -2,6 +2,7 @@ package cart.controller;
 
 import cart.model.Cart;
 import cart.service.CartService;
+import com.podzilla.mq.events.ConfirmationType;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -48,8 +49,6 @@ public class CartController {
                     description = "Internal server error",
                     content = @Content)
     })
-       
-    
     @PostMapping("/create")
     public ResponseEntity<Cart> createCart(
             @RequestHeader("X-User-Id") final String customerId) {
@@ -235,14 +234,14 @@ public class CartController {
     @PostMapping("/checkout")
     public ResponseEntity<Cart> checkoutCart(
             @RequestHeader("X-User-Id") final String customerId,
-            @RequestParam(required = true) final com.podzilla.mq.events.ConfirmationType confirmationType,
+            @RequestParam(required = true) final ConfirmationType confirmationType,
             @RequestParam(required = false) final String signature,
             @RequestParam(required = true) final Double longitude,
             @RequestParam(required = true) final Double latitude,
             @RequestParam(required = true) final DeliveryAddress address
             ) {
-        log.debug("Entering checkoutCart endpoint with customerId: {}," +
-                        " confirmationType: {}, signature: {}",
+        log.debug("Entering checkoutCart endpoint with customerId: {},"
+                        + " confirmationType: {}, signature: {}",
                 customerId, confirmationType, signature);
         try {
             Cart updatedCart = cartService.checkoutCart(customerId, confirmationType,
