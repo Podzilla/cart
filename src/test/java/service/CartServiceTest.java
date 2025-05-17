@@ -19,6 +19,9 @@ import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import com.podzilla.mq.EventPublisher;
+import com.podzilla.mq.EventsConstants;
+
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -37,7 +40,7 @@ class CartServiceTest {
     private CartRepository cartRepository;
 
     @Mock
-    private RabbitTemplate rabbitTemplate;
+    private EventPublisher eventPublisher;  // Replace RabbitTemplate with EventPublisher
 
     @Mock
     private PromoCodeService promoCodeService;
@@ -82,9 +85,11 @@ class CartServiceTest {
         item1Input = new CartItem(productId1, 1, price1);
         item2Input = new CartItem(productId2, 2, price2);
 
-        ReflectionTestUtils.setField(cartService, "exchangeName", exchangeName);
-        ReflectionTestUtils.setField(cartService, "checkoutRoutingKey", checkoutRoutingKey);
+        // Remove these lines as they're no longer needed
+        // ReflectionTestUtils.setField(cartService, "exchangeName", exchangeName);
+        // ReflectionTestUtils.setField(cartService, "checkoutRoutingKey", checkoutRoutingKey);
 
+        // Rest of the setup remains the same
         lenient().when(cartRepository.save(any(Cart.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         lenient().when(cartRepository.findByCustomerId(anyString())).thenReturn(Optional.empty());
@@ -336,12 +341,12 @@ class CartServiceTest {
         PromoCode promo = createTestPromoCode("SAVE10", PromoCode.DiscountType.PERCENTAGE, new BigDecimal("10"), null, null, true);
         when(promoCodeService.getActivePromoCode("SAVE10")).thenReturn(Optional.of(promo));
 
-        doNothing().when(rabbitTemplate).convertAndSend(anyString(), anyString(), any(OrderRequest.class));
+        doNothing().when(eventPublisher).publishEvent(eq(EventsConstants.ORDER_PLACED), any(OrderRequest.class));
 
         Cart result = cartService.checkoutCart(customerId, ConfirmationType.OTP, null);
 
         ArgumentCaptor<OrderRequest> eventCaptor = ArgumentCaptor.forClass(OrderRequest.class);
-        verify(rabbitTemplate).convertAndSend(eq(exchangeName), eq(checkoutRoutingKey), eventCaptor.capture());
+        verify(eventPublisher).publishEvent(eq(EventsConstants.ORDER_PLACED), eventCaptor.capture());
         OrderRequest publishedEvent = eventCaptor.getValue();
 
         assertEquals(customerId, publishedEvent.getCustomerId());
@@ -370,7 +375,7 @@ class CartServiceTest {
         Cart result = cartService.checkoutCart(customerId, ConfirmationType.SIGNATURE, signature);
 
         ArgumentCaptor<OrderRequest> eventCaptor = ArgumentCaptor.forClass(OrderRequest.class);
-        verify(rabbitTemplate).convertAndSend(eq(exchangeName), eq(checkoutRoutingKey), eventCaptor.capture());
+        verify(eventPublisher).publishEvent(eq(EventsConstants.ORDER_PLACED), eventCaptor.capture());
         OrderRequest publishedEvent = eventCaptor.getValue();
 
         assertEquals(ConfirmationType.SIGNATURE, publishedEvent.getConfirmationType());
@@ -386,7 +391,7 @@ class CartServiceTest {
 
         assertEquals(HttpStatus.BAD_REQUEST, ex.getStatus());
         assertEquals("Signature is required for SIGNATURE confirmation type", ex.getMessage());
-        verify(rabbitTemplate, never()).convertAndSend(anyString(), anyString(), any(OrderRequest.class));
+verify(eventPublisher, never()).publishEvent(eq(EventsConstants.ORDER_PLACED), any(OrderRequest.class));
     }
 
     @Test
@@ -398,7 +403,7 @@ class CartServiceTest {
 
         assertEquals(HttpStatus.BAD_REQUEST, ex.getStatus());
         assertEquals("Cannot checkout an empty cart.", ex.getMessage());
-        verify(rabbitTemplate, never()).convertAndSend(anyString(), anyString(), any(OrderRequest.class));
+verify(eventPublisher, never()).publishEvent(eq(EventsConstants.ORDER_PLACED), any(OrderRequest.class));
     }
 
     @Test
@@ -413,8 +418,8 @@ class CartServiceTest {
         cart.setTotalPrice(new BigDecimal(formattedSubTotal));
         cart.setDiscountAmount(new BigDecimal(formattedBigZero));
 
-        doThrow(new RuntimeException("RabbitMQ publish error")).when(rabbitTemplate)
-                .convertAndSend(eq(exchangeName), eq(checkoutRoutingKey), any(OrderRequest.class));
+        doThrow(new RuntimeException("Event publish error")).when(eventPublisher)
+                .publishEvent(eq(EventsConstants.ORDER_PLACED), any(OrderRequest.class));
 
         RuntimeException ex = assertThrows(RuntimeException.class,
                 () -> cartService.checkoutCart(customerId, ConfirmationType.QR_CODE, null));
