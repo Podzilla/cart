@@ -11,6 +11,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RestController;
+
+import com.podzilla.mq.events.DeliveryAddress;
+
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -235,12 +238,15 @@ public class CartController {
             @RequestParam(required = true) final com.podzilla.mq.events.ConfirmationType confirmationType,
             @RequestParam(required = false) final String signature,
             @RequestParam(required = true) final Double longitude,
-            @RequestParam(required = true) final Double latitude) {
+            @RequestParam(required = true) final Double latitude,
+            @RequestParam(required = true) final DeliveryAddress address
+            ) {
         log.debug("Entering checkoutCart endpoint with customerId: {}," +
                         " confirmationType: {}, signature: {}",
                 customerId, confirmationType, signature);
         try {
-            Cart updatedCart = cartService.checkoutCart(customerId, confirmationType, signature, longitude, latitude);
+            Cart updatedCart = cartService.checkoutCart(customerId, confirmationType,
+             signature, longitude, latitude, address);
             log.debug("Cart checked out: {}", updatedCart);
             return ResponseEntity.ok(updatedCart);
         } catch (Exception ex) {

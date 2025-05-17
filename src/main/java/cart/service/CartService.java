@@ -252,7 +252,7 @@ public class CartService {
     }
 
     public Cart checkoutCart(final String customerId, final ConfirmationType confirmationType,
-     final String signature, final Double longitude, final Double latitude) {
+     final String signature, final Double longitude, final Double latitude, DeliveryAddress address) {
         log.debug("Entering checkoutCart for customerId: {} with confirmationType: {}", 
                 customerId, confirmationType);
         Cart cart = getActiveCart(customerId);
@@ -281,7 +281,7 @@ public class CartService {
                 .customerId(customerId)
                 .items(orderItems) 
                 .totalAmount(cart.getTotalPrice())
-                .deliveryAddress(new DeliveryAddress("", "", "", "", ""))
+                .deliveryAddress(address)
                 .orderLatitude(latitude != null ? latitude : 0.0)
                 .orderLongitude(longitude != null ? longitude : 0.0)
                 .signature(signature)
