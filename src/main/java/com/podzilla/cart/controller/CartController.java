@@ -239,7 +239,7 @@ public class CartController {
             @RequestParam(required = false) final String signature,
             @RequestParam(required = true) final Double longitude,
             @RequestParam(required = true) final Double latitude,
-            @RequestParam(required = true) final DeliveryAddress address
+            @RequestBody(required = true) final DeliveryAddress address
             ) {
         log.debug("Entering checkoutCart endpoint with customerId: {},"
                         + " confirmationType: {}, signature: {}",
