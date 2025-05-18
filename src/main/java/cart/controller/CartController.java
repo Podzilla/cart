@@ -27,7 +27,7 @@ import io.swagger.v3.oas.annotations.media.Content;
 import org.springframework.web.bind.annotation.RequestHeader;
 
 @RestController
-@RequestMapping("/api/carts")
+@RequestMapping("/carts")
 @RequiredArgsConstructor
 @Tag(name = "Cart Controller", description = "Handles cart"
         + " operations like add, update,"

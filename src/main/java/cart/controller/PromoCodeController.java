@@ -21,7 +21,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import java.util.List;
 
 @RestController
-@RequestMapping("/api/admin/promocodes")
+@RequestMapping("/admin/promocodes")
 @RequiredArgsConstructor
 @Tag(name = "PromoCode Admin", description = "Manage promotional codes (Requires Admin Role)")
 @Slf4j
