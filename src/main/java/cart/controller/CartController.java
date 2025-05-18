@@ -1,9 +1,8 @@
 package cart.controller;
 
-
-
 import cart.model.Cart;
 import cart.service.CartService;
+import com.podzilla.mq.events.ConfirmationType;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -13,6 +12,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RestController;
+
+import com.podzilla.mq.events.DeliveryAddress;
+
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -22,9 +24,10 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestBody;
 import cart.model.CartItem;
 import io.swagger.v3.oas.annotations.media.Content;
+import org.springframework.web.bind.annotation.RequestHeader;
 
 @RestController
-@RequestMapping("/api/carts")
+@RequestMapping("/carts")
 @RequiredArgsConstructor
 @Tag(name = "Cart Controller", description = "Handles cart"
         + " operations like add, update,"
@@ -46,9 +49,10 @@ public class CartController {
                     description = "Internal server error",
                     content = @Content)
     })
-    @PostMapping("/create/{customerId}")
+
+    @PostMapping("/create")
     public ResponseEntity<Cart> createCart(
-            @PathVariable("customerId") final String customerId) {
+            @RequestHeader("X-User-Id") final String customerId) {
         log.debug("Entering createCart endpoint"
                 + " with customerId:", customerId);
         Cart cart = cartService.createCart(customerId);
@@ -63,9 +67,10 @@ public class CartController {
             @ApiResponse(responseCode = "404",
                     description = "Cart not found for this customer")
     })
-    @GetMapping("/customer/{customerId}")
+
+    @GetMapping("/customer")
     public ResponseEntity<Cart> getCartByCustomerId(
-            @PathVariable("customerId") final String customerId) {
+            @RequestHeader("X-User-Id") final String customerId) {
         log.debug("Entering getCartByCustomerId"
                 + " endpoint with customerId:",
                 customerId);
@@ -81,9 +86,10 @@ public class CartController {
             @ApiResponse(responseCode = "404",
                     description = "Cart not found")
     })
-    @DeleteMapping("/customer/{customerId}")
+
+    @DeleteMapping("/customer")
     public ResponseEntity<Void> deleteCart(
-            @PathVariable("customerId") final String customerId) {
+            @RequestHeader("X-User-Id") final String customerId) {
         log.debug("Entering deleteCart end"
                 + "point with customerId:", customerId);
         cartService.deleteCartByCustomerId(customerId);
@@ -105,7 +111,7 @@ public class CartController {
     })
     @PostMapping("/{customerId}/items")
     public ResponseEntity<Cart> addItemToCart(
-            @PathVariable("customerId") final String customerId,
+            @RequestHeader("X-User-Id") final String customerId,
             @RequestBody final CartItem cartItem) {
         log.debug("Entering addItemToCart"
                 + " endpoint with customerId: {},"
@@ -127,7 +133,7 @@ public class CartController {
     })
     @PatchMapping("/{customerId}/items/{productId}")
     public ResponseEntity<Cart> updateItemQuantity(
-            @PathVariable("customerId") final String customerId,
+            @RequestHeader("X-User-Id") final String customerId,
             @PathVariable("productId") final String productId,
             @RequestParam final int quantity) {
         log.debug("Entering updateItemQuantity"
@@ -150,7 +156,7 @@ public class CartController {
     })
     @DeleteMapping("/{customerId}/items/{productId}")
     public ResponseEntity<Cart> removeItemFromCart(
-            @PathVariable("customerId") final String customerId,
+            @RequestHeader("X-User-Id") final String customerId,
             @PathVariable("productId") final String productId) {
         log.debug("Entering removeItemFromCart"
                 + " endpoint with customerId:,"
@@ -169,9 +175,10 @@ public class CartController {
             @ApiResponse(responseCode = "404",
                     description = "Cart not found")
     })
-    @DeleteMapping("/{customerId}/clear")
+
+    @DeleteMapping("/clear")
     public ResponseEntity<Void> clearCart(
-            @PathVariable("customerId") final String customerId) {
+            @RequestHeader("X-User-Id") final String customerId) {
         log.debug("Entering clearCart"
                 + " endpoint with customerId:", customerId);
         cartService.clearCart(customerId);
@@ -186,9 +193,10 @@ public class CartController {
             @ApiResponse(responseCode = "404",
                     description = "Cart not found")
     })
-    @PatchMapping("/{customerId}/archive")
+
+    @PatchMapping("/archive")
     public ResponseEntity<Cart> archiveCart(
-            @PathVariable("customerId") final String customerId) {
+            @RequestHeader("X-User-Id") final String customerId) {
         log.debug("Entering archiveCart"
                 + " endpoint with customerId:", customerId);
         Cart archivedCart = cartService.archiveCart(customerId);
@@ -203,9 +211,10 @@ public class CartController {
             @ApiResponse(responseCode = "404",
                     description = "Archived cart not found")
     })
-    @PatchMapping("/{customerId}/unarchive")
+    // Replace @PatchMapping("/{customerId}/unarchive")
+    @PatchMapping("/unarchive")
     public ResponseEntity<Cart> unarchiveCart(
-            @PathVariable("customerId") final String customerId) {
+            @RequestHeader("X-User-Id") final String customerId) {
         log.debug("Entering unarchiveCart"
                 + " endpoint with customerId:", customerId);
         Cart activeCart = cartService.unarchiveCart(customerId);
@@ -222,20 +231,70 @@ public class CartController {
             @ApiResponse(responseCode = "500",
                     description = "Failed to communicate with Order Service")
     })
-    @PostMapping("/{customerId}/checkout")
+
+    @PostMapping("/checkout")
     public ResponseEntity<Cart> checkoutCart(
-            @PathVariable("customerId") final String customerId) {
-        log.debug("Entering checkoutCart"
-                + " endpoint with customerId:", customerId);
+            @RequestHeader("X-User-Id") final String customerId,
+            @RequestParam(required = true) final ConfirmationType confirmationType,
+            @RequestParam(required = false) final String signature,
+            @RequestParam(required = true) final Double longitude,
+            @RequestParam(required = true) final Double latitude,
+            @RequestParam(required = true) final DeliveryAddress address
+            ) {
+        log.debug("Entering checkoutCart endpoint with customerId: {},"
+                        + " confirmationType: {}, signature: {}",
+                customerId, confirmationType, signature);
         try {
-            Cart updatedCart = cartService.checkoutCart(customerId);
+            Cart updatedCart = cartService.checkoutCart(customerId, confirmationType,
+             signature, longitude, latitude, address);
             log.debug("Cart checked out: {}", updatedCart);
             return ResponseEntity.ok(updatedCart);
         } catch (Exception ex) {
-            log.error("Error during checkout"
-                    + " for customerId: {}", customerId, ex);
-            throw new IllegalCallerException("Error "
-                    + "communicating with Order Service");
+            log.error("Error during checkout for customerId: {}", customerId, ex);
+            throw new IllegalCallerException("Error communicating with Order Service");
         }
+    }
+
+    @Operation(summary = "Apply a promo code to the cart")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200",
+                    description = "Promo code applied successfully"),
+            @ApiResponse(responseCode = "400",
+                    description = "Invalid or expired promo code"),
+            @ApiResponse(responseCode = "404",
+                    description = "Active cart not found")
+    })
+
+    @PostMapping("/promo/{promoCode}")
+    public ResponseEntity<Cart> applyPromoCode(
+            @RequestHeader("X-User-Id") final String customerId,
+            @PathVariable("promoCode") final String promoCode) {
+        log.debug("Entering applyPromoCode endpoint with "
+                + "customerId: {}, promoCode: {}",
+                customerId, promoCode);
+        Cart updatedCart = cartService.applyPromoCode(
+                customerId, promoCode);
+        log.debug("Promo code applied, updated cart: "
+                + "{}", updatedCart);
+        return ResponseEntity.ok(updatedCart);
+    }
+
+    @Operation(summary = "Remove the applied promo code from the cart")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200",
+                    description = "Promo code removed successfully"),
+            @ApiResponse(responseCode = "404",
+                    description = "Active cart not found")
+    })
+
+    @DeleteMapping("/promo")
+    public ResponseEntity<Cart> removePromoCode(
+            @RequestHeader("X-User-Id") final String customerId) {
+        log.debug("Entering removePromoCode "
+                + "endpoint with customerId: {}", customerId);
+        Cart updatedCart = cartService.removePromoCode(customerId);
+        log.debug("Promo code removed (if any),"
+                + " updated cart: {}", updatedCart);
+        return ResponseEntity.ok(updatedCart);
     }
 }

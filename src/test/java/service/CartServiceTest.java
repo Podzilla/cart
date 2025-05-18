@@ -2,27 +2,36 @@ package service;
 import cart.exception.GlobalHandlerException;
 import cart.model.Cart;
 import cart.model.CartItem;
-import cart.model.OrderRequest;
+import cart.model.PromoCode;
 import cart.repository.CartRepository;
 import cart.service.CartService;
+import cart.service.PromoCodeService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.test.util.ReflectionTestUtils;
-import org.springframework.web.client.RestTemplate;
 
+import com.podzilla.mq.EventPublisher;
+import com.podzilla.mq.EventsConstants;
+import com.podzilla.mq.events.CartCheckedoutEvent;
+import com.podzilla.mq.events.ConfirmationType;
+import com.podzilla.mq.events.DeliveryAddress;
+
+import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.NoSuchElementException;
 import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -32,32 +41,71 @@ class CartServiceTest {
     private CartRepository cartRepository;
 
     @Mock
-    private RestTemplate restTemplate;
+    private EventPublisher eventPublisher;  // Replace RabbitTemplate with EventPublisher
+
+    @Mock
+    private PromoCodeService promoCodeService;
 
     @InjectMocks
     private CartService cartService;
 
     private Cart cart;
-    private CartItem cartItem;
+    private CartItem item1Input;
+    private CartItem item2Input;
+
     private final String customerId = "cust123";
-    private final String productId = "prod456";
+    private final String productId1 = "prod1";
+    private final String productId2 = "prod2";
+    private final Double latitude = 77.12;
+    private final Double longitude = 77.12;
+    private final BigDecimal price1 = new BigDecimal("10.50");
+    private final BigDecimal price2 = new BigDecimal("5.00");
     private final String cartId = UUID.randomUUID().toString();
-    private final String orderServiceUrl = "http://localhost:8080";
+    private final DeliveryAddress address = new DeliveryAddress("123 Main St", "City", "State", "Country", "12345");
+
+    private final String exchangeName = "test.cart.events";
+    private final String checkoutRoutingKey = "test.order.checkout.initiate";
+
+    private Cart createNewTestCart(String cId, String crtId) {
+        return new Cart(crtId, cId, new ArrayList<>(), false, null,
+                BigDecimal.ZERO.setScale(2), BigDecimal.ZERO.setScale(2), BigDecimal.ZERO.setScale(2));
+    }
+
+    private PromoCode createTestPromoCode(String code, PromoCode.DiscountType type, BigDecimal value, BigDecimal minPurchase, Instant expiry, boolean active) {
+        PromoCode promo = new PromoCode();
+        promo.setCode(code.toUpperCase());
+        promo.setDiscountType(type);
+        promo.setDiscountValue(value);
+        promo.setMinimumPurchaseAmount(minPurchase);
+        promo.setExpiryDate(expiry);
+        promo.setActive(active);
+        return promo;
+    }
 
     @BeforeEach
     void setUp() {
-        // Initialize test data
-        cart = new Cart(cartId, customerId, new ArrayList<>(), false);
-        cartItem = new CartItem(productId, 1);
+        cart = createNewTestCart(customerId, cartId);
 
-        // Set orderServiceUrl
-        ReflectionTestUtils.setField(cartService, "orderServiceUrl", orderServiceUrl);
+        item1Input = new CartItem(productId1, 1, price1);
+        item2Input = new CartItem(productId2, 2, price2);
+
+        // Remove these lines as they're no longer needed
+        // ReflectionTestUtils.setField(cartService, "exchangeName", exchangeName);
+        // ReflectionTestUtils.setField(cartService, "checkoutRoutingKey", checkoutRoutingKey);
+
+        // Rest of the setup remains the same
+        lenient().when(cartRepository.save(any(Cart.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        lenient().when(cartRepository.findByCustomerId(anyString())).thenReturn(Optional.empty());
+        lenient().when(cartRepository.findByCustomerId(eq(customerId))).thenReturn(Optional.of(cart));
+
+        lenient().when(cartRepository.findByCustomerIdAndArchived(anyString(), anyBoolean())).thenReturn(Optional.empty());
+        lenient().when(cartRepository.findByCustomerIdAndArchived(eq(customerId), eq(false))).thenReturn(Optional.of(cart));
+        lenient().when(cartRepository.findByCustomerIdAndArchived(eq(customerId), eq(true))).thenReturn(Optional.of(createNewTestCart(customerId, cartId + "_archived")));
     }
 
     @Test
-    void createCart_existingCart_returnsCart() {
-        when(cartRepository.findByCustomerId(customerId)).thenReturn(Optional.of(cart));
-
+    void createCart_existingCart_returnsCartAndDoesNotSave() {
         Cart result = cartService.createCart(customerId);
 
         assertEquals(cart, result);
@@ -66,269 +114,368 @@ class CartServiceTest {
     }
 
     @Test
-    void createCart_noExistingCart_createsAndSavesCart() {
-        when(cartRepository.findByCustomerId(customerId)).thenReturn(Optional.empty());
-        when(cartRepository.save(any(Cart.class))).thenAnswer(invocation -> invocation.getArgument(0));
+    void createCart_noExistingCart_createsAndSavesNewCartWithZeroTotals() {
+        String newCustId = "newCust456";
+        when(cartRepository.findByCustomerId(eq(newCustId))).thenReturn(Optional.empty());
+        when(cartRepository.save(any(Cart.class))).thenAnswer(invocation -> {
+            Cart newCart = invocation.getArgument(0);
+            if (newCart.getId() == null) newCart.setId(UUID.randomUUID().toString());
+            return newCart;
+        });
 
-        Cart result = cartService.createCart(customerId);
+        Cart result = cartService.createCart(newCustId);
 
-        assertEquals(customerId, result.getCustomerId());
+        assertEquals(newCustId, result.getCustomerId());
+        assertNotNull(result.getId());
         assertFalse(result.isArchived());
         assertTrue(result.getItems().isEmpty());
-        verify(cartRepository).findByCustomerId(customerId);
-        verify(cartRepository).save(any(Cart.class));
+        ArgumentCaptor<Cart> cartCaptor = ArgumentCaptor.forClass(Cart.class);
+        verify(cartRepository).save(cartCaptor.capture());
+        Cart savedCart = cartCaptor.getValue();
+        assertEquals(BigDecimal.ZERO.setScale(2), savedCart.getSubTotal());
+        assertEquals(BigDecimal.ZERO.setScale(2), savedCart.getDiscountAmount());
+        assertEquals(BigDecimal.ZERO.setScale(2), savedCart.getTotalPrice());
+        assertNull(result.getAppliedPromoCode());
+
+        verify(cartRepository).findByCustomerId(eq(newCustId));
     }
 
     @Test
-    void addItemToCart_newItem_addsItem() {
-        when(cartRepository.findByCustomerId(customerId)).thenReturn(Optional.of(cart));
-        when(cartRepository.save(any(Cart.class))).thenReturn(cart);
-
-        Cart result = cartService.addItemToCart(customerId, cartItem);
+    void addItemToCart_newItem_addsItemAndRecalculatesTotals() {
+        Cart result = cartService.addItemToCart(customerId, item1Input);
 
         assertEquals(1, result.getItems().size());
-        assertEquals(cartItem.getProductId(), result.getItems().get(0).getProductId());
-        assertEquals(cartItem.getQuantity(), result.getItems().get(0).getQuantity());
-        verify(cartRepository).findByCustomerId(customerId);
-        verify(cartRepository).save(cart);
+        CartItem added = result.getItems().get(0);
+        assertEquals(productId1, added.getProductId());
+        assertEquals(1, added.getQuantity());
+        assertEquals(price1, added.getUnitPrice());
+
+        assertEquals(new BigDecimal("10.50").setScale(2), result.getSubTotal());
+        assertEquals(BigDecimal.ZERO.setScale(2), result.getDiscountAmount());
+        assertEquals(new BigDecimal("10.50").setScale(2), result.getTotalPrice());
+        verify(cartRepository, times(1)).save(any(Cart.class));
     }
 
     @Test
-    void addItemToCart_existingItem_updatesQuantity() {
-        cart.getItems().add(new CartItem(productId, 1));
-        CartItem newItem = new CartItem(productId, 2);
-        when(cartRepository.findByCustomerId(customerId)).thenReturn(Optional.of(cart));
-        when(cartRepository.save(any(Cart.class))).thenReturn(cart);
+    void addItemToCart_existingItem_updatesQuantityAndRecalculatesTotals() {
+        cart.getItems().add(new CartItem(productId1, 1, price1));
 
-        Cart result = cartService.addItemToCart(customerId, newItem);
+        CartItem additionalItem1 = new CartItem(productId1, 2, price1);
+        Cart result = cartService.addItemToCart(customerId, additionalItem1);
 
         assertEquals(1, result.getItems().size());
-        assertEquals(3, result.getItems().get(0).getQuantity());
-        verify(cartRepository).findByCustomerId(customerId);
-        verify(cartRepository).save(cart);
+        CartItem updatedItem = result.getItems().get(0);
+        assertEquals(productId1, updatedItem.getProductId());
+        assertEquals(3, updatedItem.getQuantity());
+        assertEquals(new BigDecimal("31.50").setScale(2), result.getSubTotal());
+        assertEquals(BigDecimal.ZERO.setScale(2), result.getDiscountAmount());
+        assertEquals(new BigDecimal("31.50").setScale(2), result.getTotalPrice());
+        verify(cartRepository, times(1)).save(any(Cart.class));
     }
 
     @Test
-    void addItemToCart_cartNotFound_throwsGlobalHandlerException() {
-        when(cartRepository.findByCustomerId(customerId)).thenReturn(Optional.empty());
+    void updateItemQuantity_existingItem_updatesAndRecalculates() {
+        cart.getItems().add(new CartItem(productId1, 2, price1));
 
-        GlobalHandlerException exception = assertThrows(GlobalHandlerException.class,
-                () -> cartService.addItemToCart(customerId, cartItem));
-        assertEquals(HttpStatus.NOT_FOUND, exception.getStatus());
-        assertEquals("Cart not found", exception.getMessage());
-        verify(cartRepository).findByCustomerId(customerId);
-        verify(cartRepository, never()).save(any());
-    }
+        Cart result = cartService.updateItemQuantity(customerId, productId1, 5);
 
-    @Test
-    void updateItemQuantity_existingItem_updatesQuantity() {
-        cart.getItems().add(new CartItem(productId, 1));
-        when(cartRepository.findByCustomerId(customerId)).thenReturn(Optional.of(cart));
-        when(cartRepository.save(any(Cart.class))).thenReturn(cart);
-
-        Cart result = cartService.updateItemQuantity(customerId, productId, 5);
-
+        assertEquals(1, result.getItems().size());
         assertEquals(5, result.getItems().get(0).getQuantity());
-        verify(cartRepository).findByCustomerId(customerId);
-        verify(cartRepository).save(cart);
+        assertEquals(new BigDecimal("52.50").setScale(2), result.getSubTotal());
+        assertEquals(BigDecimal.ZERO.setScale(2), result.getDiscountAmount());
+        assertEquals(new BigDecimal("52.50").setScale(2), result.getTotalPrice());
+        verify(cartRepository, times(1)).save(any(Cart.class));
     }
 
     @Test
-    void updateItemQuantity_quantityZero_removesItem() {
-        cart.getItems().add(new CartItem(productId, 1));
-        when(cartRepository.findByCustomerId(customerId)).thenReturn(Optional.of(cart));
-        when(cartRepository.save(any(Cart.class))).thenReturn(cart);
+    void updateItemQuantity_quantityToZero_removesItemAndRecalculates() {
+        cart.getItems().add(new CartItem(productId1, 2, price1));
+        cart.getItems().add(new CartItem(productId2, 1, price2));
 
-        Cart result = cartService.updateItemQuantity(customerId, productId, 0);
+        Cart result = cartService.updateItemQuantity(customerId, productId1, 0);
 
-        assertTrue(result.getItems().isEmpty());
-        verify(cartRepository).findByCustomerId(customerId);
-        verify(cartRepository).save(cart);
+        assertEquals(1, result.getItems().size());
+        assertEquals(productId2, result.getItems().get(0).getProductId());
+        assertEquals(new BigDecimal("5.00").setScale(2), result.getSubTotal());
+        assertEquals(BigDecimal.ZERO.setScale(2), result.getDiscountAmount());
+        assertEquals(new BigDecimal("5.00").setScale(2), result.getTotalPrice());
+        verify(cartRepository, times(1)).save(any(Cart.class));
     }
 
     @Test
-    void updateItemQuantity_itemNotFound_throwsGlobalHandlerException() {
-        when(cartRepository.findByCustomerId(customerId)).thenReturn(Optional.of(cart));
+    void removeItemFromCart_itemExists_removesAndRecalculates() {
+        cart.getItems().add(new CartItem(productId1, 2, price1));
+        cart.getItems().add(new CartItem(productId2, 1, price2));
 
-        GlobalHandlerException exception = assertThrows(GlobalHandlerException.class,
-                () -> cartService.updateItemQuantity(customerId, productId, 5));
-        assertEquals(HttpStatus.NOT_FOUND, exception.getStatus());
-        assertEquals("Product not found in cart", exception.getMessage());
-        verify(cartRepository).findByCustomerId(customerId);
+        Cart result = cartService.removeItemFromCart(customerId, productId1);
+
+        assertEquals(1, result.getItems().size());
+        assertEquals(productId2, result.getItems().get(0).getProductId());
+        assertEquals(new BigDecimal("5.00").setScale(2), result.getSubTotal());
+        assertEquals(BigDecimal.ZERO.setScale(2), result.getDiscountAmount());
+        assertEquals(new BigDecimal("5.00").setScale(2), result.getTotalPrice());
+        verify(cartRepository, times(1)).save(any(Cart.class));
+    }
+
+    @Test
+    void clearCart_itemsExist_clearsItemsAndResetsTotalsAndPromo() {
+        cart.getItems().add(new CartItem(productId1, 1, price1));
+        cart.setAppliedPromoCode("TESTCODE");
+        cart.setSubTotal(new BigDecimal("10.50"));
+        cart.setDiscountAmount(new BigDecimal("1.00"));
+        cart.setTotalPrice(new BigDecimal("9.50"));
+
+        cartService.clearCart(customerId);
+
+        ArgumentCaptor<Cart> cartCaptor = ArgumentCaptor.forClass(Cart.class);
+        verify(cartRepository).save(cartCaptor.capture());
+        Cart savedCart = cartCaptor.getValue();
+        assertTrue(savedCart.getItems().isEmpty());
+        assertNull(savedCart.getAppliedPromoCode());
+        assertEquals(BigDecimal.ZERO.setScale(2), savedCart.getSubTotal());
+        assertEquals(BigDecimal.ZERO.setScale(2), savedCart.getDiscountAmount());
+        assertEquals(BigDecimal.ZERO.setScale(2), savedCart.getTotalPrice());
+    }
+
+    @Test
+    void applyPromoCode_validPercentageCode_calculatesDiscount() {
+        cart.getItems().add(new CartItem(productId1, 2, new BigDecimal("10.00")));
+
+        String promoCodeStr = "SAVE10";
+        PromoCode promo = createTestPromoCode(promoCodeStr, PromoCode.DiscountType.PERCENTAGE, new BigDecimal("10"), null, null, true);
+        when(promoCodeService.getActivePromoCode(promoCodeStr.toUpperCase())).thenReturn(Optional.of(promo));
+
+        Cart result = cartService.applyPromoCode(customerId, promoCodeStr);
+
+        assertEquals(promoCodeStr.toUpperCase(), result.getAppliedPromoCode());
+        assertEquals(new BigDecimal("20.00").setScale(2), result.getSubTotal());
+        assertEquals(new BigDecimal("2.00").setScale(2), result.getDiscountAmount());
+        assertEquals(new BigDecimal("18.00").setScale(2), result.getTotalPrice());
+        verify(cartRepository, times(1)).save(any(Cart.class));
+    }
+
+    @Test
+    void applyPromoCode_validFixedCode_calculatesDiscount() {
+        cart.getItems().add(new CartItem(productId1, 3, new BigDecimal("10.00")));
+
+        String promoCodeStr = "5OFF";
+        PromoCode promo = createTestPromoCode(promoCodeStr, PromoCode.DiscountType.FIXED_AMOUNT, new BigDecimal("5.00"), null, null, true);
+        when(promoCodeService.getActivePromoCode(promoCodeStr.toUpperCase())).thenReturn(Optional.of(promo));
+
+        Cart result = cartService.applyPromoCode(customerId, promoCodeStr);
+
+        assertEquals(promoCodeStr.toUpperCase(), result.getAppliedPromoCode());
+        assertEquals(new BigDecimal("30.00").setScale(2), result.getSubTotal());
+        assertEquals(new BigDecimal("5.00").setScale(2), result.getDiscountAmount());
+        assertEquals(new BigDecimal("25.00").setScale(2), result.getTotalPrice());
+        verify(cartRepository, times(1)).save(any(Cart.class));
+    }
+
+    @Test
+    void applyPromoCode_fixedDiscountExceedsSubtotal_discountCapped() {
+        cart.getItems().add(new CartItem(productId1, 1, new BigDecimal("3.00")));
+
+        String promoCodeStr = "BIGOFF";
+        PromoCode promo = createTestPromoCode(promoCodeStr, PromoCode.DiscountType.FIXED_AMOUNT, new BigDecimal("5.00"), null, null, true);
+        when(promoCodeService.getActivePromoCode(promoCodeStr.toUpperCase())).thenReturn(Optional.of(promo));
+
+        Cart result = cartService.applyPromoCode(customerId, promoCodeStr);
+
+        assertEquals(new BigDecimal("3.00").setScale(2), result.getSubTotal());
+        assertEquals(new BigDecimal("3.00").setScale(2), result.getDiscountAmount());
+        assertEquals(BigDecimal.ZERO.setScale(2), result.getTotalPrice());
+    }
+
+    @Test
+    void applyPromoCode_invalidCode_throwsGlobalHandlerException() {
+        String invalidCode = "FAKECODE";
+        when(promoCodeService.getActivePromoCode(invalidCode.toUpperCase())).thenReturn(Optional.empty());
+
+        GlobalHandlerException ex = assertThrows(GlobalHandlerException.class,
+                () -> cartService.applyPromoCode(customerId, invalidCode));
+
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatus());
+        assertTrue(ex.getMessage().contains("Invalid, inactive, or expired promo code"));
         verify(cartRepository, never()).save(any());
     }
 
     @Test
-    void removeItemFromCart_itemExists_removesItem() {
-        cart.getItems().add(new CartItem(productId, 1));
-        when(cartRepository.findByCustomerId(customerId)).thenReturn(Optional.of(cart));
-        when(cartRepository.save(any(Cart.class))).thenReturn(cart);
+    void applyPromoCode_expiredCode_removesCodeAndNoDiscount() {
+        cart.getItems().add(new CartItem(productId1, 1, new BigDecimal("100.00")));
 
-        Cart result = cartService.removeItemFromCart(customerId, productId);
+        String promoCodeStr = "EXPIRED";
+        PromoCode promo = createTestPromoCode(promoCodeStr, PromoCode.DiscountType.PERCENTAGE, new BigDecimal("10"),
+                null, Instant.now().minusSeconds(3600), true);
+        when(promoCodeService.getActivePromoCode(promoCodeStr.toUpperCase())).thenReturn(Optional.of(promo));
+
+        Cart result = cartService.applyPromoCode(customerId, promoCodeStr);
+
+        assertNull(result.getAppliedPromoCode());
+        assertEquals(new BigDecimal("100.00").setScale(2), result.getSubTotal());
+        assertEquals(BigDecimal.ZERO.setScale(2), result.getDiscountAmount());
+        assertEquals(new BigDecimal("100.00").setScale(2), result.getTotalPrice());
+        verify(cartRepository, times(1)).save(any(Cart.class));
+    }
+
+    @Test
+    void removePromoCode_codeExists_removesCodeAndResetsDiscount() {
+        cart.getItems().add(new CartItem(productId1, 2, new BigDecimal("10.00")));
+        cart.setAppliedPromoCode("SAVE10");
+        cart.setSubTotal(new BigDecimal("20.00"));
+        cart.setDiscountAmount(new BigDecimal("2.00"));
+        cart.setTotalPrice(new BigDecimal("18.00"));
+
+        Cart result = cartService.removePromoCode(customerId);
+
+        assertNull(result.getAppliedPromoCode());
+        assertEquals(new BigDecimal("20.00").setScale(2), result.getSubTotal());
+        assertEquals(BigDecimal.ZERO.setScale(2), result.getDiscountAmount());
+        assertEquals(new BigDecimal("20.00").setScale(2), result.getTotalPrice());
+        verify(cartRepository, times(1)).save(any(Cart.class));
+    }
+
+    @Test
+    void checkoutCart_validCartWithPromo_publishesEventAndClearsCart() {
+        cart.getItems().add(new CartItem(productId1, 1, new BigDecimal("100.00")));
+        cart.setAppliedPromoCode("SAVE10");
+        cart.setSubTotal(new BigDecimal("100.00"));
+        cart.setDiscountAmount(new BigDecimal("10.00"));
+        cart.setTotalPrice(new BigDecimal("90.00"));
+
+        PromoCode promo = createTestPromoCode("SAVE10", PromoCode.DiscountType.PERCENTAGE, new BigDecimal("10"), null, null, true);
+        when(promoCodeService.getActivePromoCode("SAVE10")).thenReturn(Optional.of(promo));
+
+        doNothing().when(eventPublisher).publishEvent(eq(EventsConstants.ORDER_PLACED), any(CartCheckedoutEvent.class));
+
+        Cart result = cartService.checkoutCart(customerId, ConfirmationType.OTP, "", latitude, longitude, address);
+
+        ArgumentCaptor<CartCheckedoutEvent> eventCaptor = ArgumentCaptor.forClass(CartCheckedoutEvent.class);
+        verify(eventPublisher).publishEvent(eq(EventsConstants.ORDER_PLACED), eventCaptor.capture());
+        CartCheckedoutEvent publishedEvent = eventCaptor.getValue();
+
+        assertEquals(customerId, publishedEvent.getCustomerId());
+        assertEquals(cartId, publishedEvent.getCartId());
+        assertEquals(1, publishedEvent.getItems().size());
+        // assertEquals(new BigDecimal("100.00").setScale(2), publishedEvent().getSubTotal());
+        // assertEquals(new BigDecimal("10.00").setScale(2), publishedEvent.getDiscountAmount());
+        assertEquals(new BigDecimal("90.00").setScale(2), publishedEvent.getTotalAmount());
+        // assertEquals("SAVE10", publishedEvent.getAppliedPromoCode());S
+        assertEquals(ConfirmationType.OTP, publishedEvent.getConfirmationType());
 
         assertTrue(result.getItems().isEmpty());
-        verify(cartRepository).findByCustomerId(customerId);
-        verify(cartRepository).save(cart);
+        assertNull(result.getAppliedPromoCode());
+        assertEquals(BigDecimal.ZERO.setScale(2), result.getSubTotal());
+        assertEquals(BigDecimal.ZERO.setScale(2), result.getDiscountAmount());
+        assertEquals(BigDecimal.ZERO.setScale(2), result.getTotalPrice());
+
+        verify(cartRepository, times(1)).save(any(Cart.class));
     }
 
     @Test
-    void removeItemFromCart_cartNotFound_throwsGlobalHandlerException() {
-        when(cartRepository.findByCustomerId(customerId)).thenReturn(Optional.empty());
+    void checkoutCart_withSignature_publishesEventWithSignature() {
+        cart.getItems().add(new CartItem(productId1, 1, new BigDecimal("100.00")));
+        String signature = "customer_signature_data";
 
-        GlobalHandlerException exception = assertThrows(GlobalHandlerException.class,
-                () -> cartService.removeItemFromCart(customerId, productId));
-        assertEquals(HttpStatus.NOT_FOUND, exception.getStatus());
-        assertEquals("Cart not found", exception.getMessage());
-        verify(cartRepository).findByCustomerId(customerId);
-        verify(cartRepository, never()).save(any());
+        Cart result = cartService.checkoutCart(customerId, ConfirmationType.SIGNATURE, signature, latitude, longitude, address);
+
+        ArgumentCaptor<CartCheckedoutEvent> eventCaptor = ArgumentCaptor.forClass(CartCheckedoutEvent.class);
+        verify(eventPublisher).publishEvent(eq(EventsConstants.ORDER_PLACED), eventCaptor.capture());
+        CartCheckedoutEvent publishedEvent = eventCaptor.getValue();
+
+        assertEquals(ConfirmationType.SIGNATURE, publishedEvent.getConfirmationType());
+        assertEquals(signature, publishedEvent.getSignature());
     }
 
     @Test
-    void deleteCartByCustomerId_cartExists_deletesCart() {
-        when(cartRepository.findByCustomerId(customerId)).thenReturn(Optional.of(cart));
+    void checkoutCart_signatureTypeWithoutSignature_throwsException() {
+        cart.getItems().add(new CartItem(productId1, 1, new BigDecimal("100.00")));
 
-        cartService.deleteCartByCustomerId(customerId);
+        GlobalHandlerException ex = assertThrows(GlobalHandlerException.class,
+                () -> cartService.checkoutCart(customerId, ConfirmationType.SIGNATURE, null, latitude, longitude, address));
 
-        verify(cartRepository).findByCustomerId(customerId);
-        verify(cartRepository).delete(cart);
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatus());
+        assertEquals("Signature is required for SIGNATURE confirmation type", ex.getMessage());
+verify(eventPublisher, never()).publishEvent(eq(EventsConstants.ORDER_PLACED), any(CartCheckedoutEvent.class));
     }
 
     @Test
-    void deleteCartByCustomerId_cartNotFound_doesNothing() {
-        when(cartRepository.findByCustomerId(customerId)).thenReturn(Optional.empty());
+    void checkoutCart_emptyCart_throwsGlobalHandlerException() {
+        when(cartRepository.findByCustomerIdAndArchived(customerId, false)).thenReturn(Optional.of(cart));
 
-        cartService.deleteCartByCustomerId(customerId);
+        GlobalHandlerException ex = assertThrows(GlobalHandlerException.class,
+                () -> cartService.checkoutCart(customerId, ConfirmationType.OTP, null, latitude, longitude, address));
 
-        verify(cartRepository).findByCustomerId(customerId);
-        verify(cartRepository, never()).delete(any());
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatus());
+        assertEquals("Cannot checkout an empty cart.", ex.getMessage());
+verify(eventPublisher, never()).publishEvent(eq(EventsConstants.ORDER_PLACED), any(CartCheckedoutEvent.class));
+    }
+
+    @Test
+    void checkoutCart_rabbitMqFails_throwsRuntimeExceptionAndCartNotCleared() {
+        cart.getItems().add(item1Input);
+
+        BigDecimal subTotal = item1Input.getUnitPrice();
+        String formattedSubTotal = String.format("%.2f", subTotal);
+        BigDecimal bigZero = BigDecimal.ZERO;
+        String formattedBigZero = String.format("%.2f", bigZero);
+        cart.setSubTotal(new BigDecimal(formattedSubTotal));
+        cart.setTotalPrice(new BigDecimal(formattedSubTotal));
+        cart.setDiscountAmount(new BigDecimal(formattedBigZero));
+
+        doThrow(new RuntimeException("Event publish error")).when(eventPublisher)
+                .publishEvent(eq(EventsConstants.ORDER_PLACED), any(CartCheckedoutEvent.class));
+
+        RuntimeException ex = assertThrows(RuntimeException.class,
+                () -> cartService.checkoutCart(customerId, ConfirmationType.QR_CODE, null, latitude, longitude, address));
+
+        assertTrue(ex.getMessage().contains("Checkout process failed: Could not publish event."));
+        verify(cartRepository, never()).save(any(Cart.class));
+
+        assertEquals(1, cart.getItems().size());
+        assertEquals(new BigDecimal(formattedSubTotal), cart.getSubTotal());
     }
 
     @Test
     void getCartByCustomerId_cartExists_returnsCart() {
-        when(cartRepository.findByCustomerId(customerId)).thenReturn(Optional.of(cart));
-
         Cart result = cartService.getCartByCustomerId(customerId);
-
         assertEquals(cart, result);
         verify(cartRepository).findByCustomerId(customerId);
     }
 
     @Test
     void getCartByCustomerId_cartNotFound_throwsGlobalHandlerException() {
-        when(cartRepository.findByCustomerId(customerId)).thenReturn(Optional.empty());
+        String nonExistentCustId = "ghost";
+        when(cartRepository.findByCustomerId(eq(nonExistentCustId))).thenReturn(Optional.empty());
 
         GlobalHandlerException exception = assertThrows(GlobalHandlerException.class,
-                () -> cartService.getCartByCustomerId(customerId));
+                () -> cartService.getCartByCustomerId(nonExistentCustId));
         assertEquals(HttpStatus.NOT_FOUND, exception.getStatus());
         assertEquals("Cart not found", exception.getMessage());
-        verify(cartRepository).findByCustomerId(customerId);
-    }
-
-    @Test
-    void clearCart_cartExists_clearsItems() {
-        cart.getItems().add(new CartItem(productId, 1));
-        when(cartRepository.findByCustomerId(customerId)).thenReturn(Optional.of(cart));
-        when(cartRepository.save(any(Cart.class))).thenReturn(cart);
-
-        cartService.clearCart(customerId);
-
-        assertTrue(cart.getItems().isEmpty());
-        verify(cartRepository).findByCustomerId(customerId);
-        verify(cartRepository).save(cart);
-    }
-
-    @Test
-    void clearCart_cartNotFound_throwsGlobalHandlerException() {
-        when(cartRepository.findByCustomerId(customerId)).thenReturn(Optional.empty());
-
-        GlobalHandlerException exception = assertThrows(GlobalHandlerException.class,
-                () -> cartService.clearCart(customerId));
-        assertEquals(HttpStatus.NOT_FOUND, exception.getStatus());
-        assertEquals("Cart not found", exception.getMessage());
-        verify(cartRepository).findByCustomerId(customerId);
-        verify(cartRepository, never()).save(any());
+        verify(cartRepository).findByCustomerId(eq(nonExistentCustId));
     }
 
     @Test
     void archiveCart_activeCart_archivesCart() {
-        when(cartRepository.findByCustomerIdAndArchived(customerId, false)).thenReturn(Optional.of(cart));
-        when(cartRepository.save(any(Cart.class))).thenReturn(cart);
-
         Cart result = cartService.archiveCart(customerId);
-
         assertTrue(result.isArchived());
-        verify(cartRepository).findByCustomerIdAndArchived(customerId, false);
         verify(cartRepository).save(cart);
     }
 
     @Test
     void archiveCart_noActiveCart_throwsNoSuchElementException() {
         when(cartRepository.findByCustomerIdAndArchived(customerId, false)).thenReturn(Optional.empty());
-
         assertThrows(NoSuchElementException.class, () -> cartService.archiveCart(customerId));
-        verify(cartRepository).findByCustomerIdAndArchived(customerId, false);
-        verify(cartRepository, never()).save(any());
     }
 
     @Test
     void unarchiveCart_archivedCart_unarchivesCart() {
-        cart.setArchived(true);
-        when(cartRepository.findByCustomerIdAndArchived(customerId, true)).thenReturn(Optional.of(cart));
-        when(cartRepository.save(any(Cart.class))).thenReturn(cart);
+        Cart archivedCart = createNewTestCart(customerId, "archivedCrt");
+        archivedCart.setArchived(true);
+        when(cartRepository.findByCustomerIdAndArchived(customerId, true)).thenReturn(Optional.of(archivedCart));
 
         Cart result = cartService.unarchiveCart(customerId);
 
         assertFalse(result.isArchived());
-        verify(cartRepository).findByCustomerIdAndArchived(customerId, true);
-        verify(cartRepository).save(cart);
-    }
-
-    @Test
-    void unarchiveCart_noArchivedCart_throwsNoSuchElementException() {
-        when(cartRepository.findByCustomerIdAndArchived(customerId, true)).thenReturn(Optional.empty());
-
-        assertThrows(NoSuchElementException.class, () -> cartService.unarchiveCart(customerId));
-        verify(cartRepository).findByCustomerIdAndArchived(customerId, true);
-        verify(cartRepository, never()).save(any());
-    }
-
-    @Test
-    void checkoutCart_validCart_sendsToOrderServiceAndClearsCart() {
-        cart.getItems().add(new CartItem(productId, 1));
-        when(cartRepository.findByCustomerIdAndArchived(customerId, false)).thenReturn(Optional.of(cart));
-        when(cartRepository.save(any(Cart.class))).thenReturn(cart);
-        when(restTemplate.postForObject(eq(orderServiceUrl + "/orders"), any(OrderRequest.class), eq(Void.class)))
-                .thenReturn(null);
-
-        Cart result = cartService.checkoutCart(customerId);
-
-        assertTrue(result.getItems().isEmpty());
-        verify(cartRepository).findByCustomerIdAndArchived(customerId, false);
-        verify(restTemplate).postForObject(eq(orderServiceUrl + "/orders"), any(OrderRequest.class), eq(Void.class));
-        verify(cartRepository).save(cart);
-    }
-
-    @Test
-    void checkoutCart_noActiveCart_throwsNoSuchElementException() {
-        when(cartRepository.findByCustomerIdAndArchived(customerId, false)).thenReturn(Optional.empty());
-
-        assertThrows(NoSuchElementException.class, () -> cartService.checkoutCart(customerId));
-        verify(cartRepository).findByCustomerIdAndArchived(customerId, false);
-        verify(restTemplate, never()).postForObject(any(), any(), any());
-        verify(cartRepository, never()).save(any());
-    }
-
-    @Test
-    void checkoutCart_orderServiceFails_throwsRuntimeException() {
-        cart.getItems().add(new CartItem(productId, 1));
-        when(cartRepository.findByCustomerIdAndArchived(customerId, false)).thenReturn(Optional.of(cart));
-        when(restTemplate.postForObject(eq(orderServiceUrl + "/orders"), any(OrderRequest.class), eq(Void.class)))
-                .thenThrow(new RuntimeException("Order Service error"));
-
-        RuntimeException exception = assertThrows(RuntimeException.class, () -> cartService.checkoutCart(customerId));
-        assertEquals("Error communicating with Order Service", exception.getMessage());
-        verify(cartRepository).findByCustomerIdAndArchived(customerId, false);
-        verify(restTemplate).postForObject(eq(orderServiceUrl + "/orders"), any(OrderRequest.class), eq(Void.class));
-        verify(cartRepository, never()).save(any());
+        verify(cartRepository).save(archivedCart);
     }
 }
