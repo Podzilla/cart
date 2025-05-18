@@ -1,9 +1,9 @@
 package service;
 
-import cart.exception.GlobalHandlerException;
-import cart.model.PromoCode;
-import cart.repository.PromoCodeRepository;
-import cart.service.PromoCodeService;
+import com.podzilla.cart.exception.GlobalHandlerException;
+import com.podzilla.cart.model.PromoCode;
+import com.podzilla.cart.repository.PromoCodeRepository;
+import com.podzilla.cart.service.PromoCodeService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

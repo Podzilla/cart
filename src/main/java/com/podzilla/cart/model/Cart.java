@@ -1,4 +1,4 @@
-package cart.model;
+package com.podzilla.cart.model;
 
 import jakarta.validation.constraints.NotBlank;
 import lombok.AllArgsConstructor;

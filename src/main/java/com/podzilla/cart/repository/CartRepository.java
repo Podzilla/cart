@@ -1,6 +1,6 @@
-package cart.repository;
+package com.podzilla.cart.repository;
 
-import cart.model.Cart;
+import com.podzilla.cart.model.Cart;
 import org.springframework.data.mongodb.repository.MongoRepository;
 import org.springframework.stereotype.Repository;
 

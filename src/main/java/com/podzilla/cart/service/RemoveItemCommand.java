@@ -1,7 +1,7 @@
-package cart.service;
+package com.podzilla.cart.service;
 
-import cart.model.Cart;
-import cart.model.CartItem;
+import com.podzilla.cart.model.Cart;
+import com.podzilla.cart.model.CartItem;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
