@@ -109,7 +109,7 @@ public class CartController {
             @ApiResponse(responseCode = "404",
                     description = "Cart not found for this customer")
     })
-    @PostMapping("/{customerId}/items")
+    @PostMapping("/items")
     public ResponseEntity<Cart> addItemToCart(
             @RequestHeader("X-User-Id") final String customerId,
             @RequestBody final CartItem cartItem) {
@@ -131,7 +131,7 @@ public class CartController {
             @ApiResponse(responseCode = "404",
                     description = "Cart or item not found")
     })
-    @PatchMapping("/{customerId}/items/{productId}")
+    @PatchMapping("/items/{productId}")
     public ResponseEntity<Cart> updateItemQuantity(
             @RequestHeader("X-User-Id") final String customerId,
             @PathVariable("productId") final String productId,
@@ -154,7 +154,7 @@ public class CartController {
             @ApiResponse(responseCode = "404",
                     description = "Cart or item not found")
     })
-    @DeleteMapping("/{customerId}/items/{productId}")
+    @DeleteMapping("/items/{productId}")
     public ResponseEntity<Cart> removeItemFromCart(
             @RequestHeader("X-User-Id") final String customerId,
             @PathVariable("productId") final String productId) {
@@ -239,7 +239,7 @@ public class CartController {
             @RequestParam(required = false) final String signature,
             @RequestParam(required = true) final Double longitude,
             @RequestParam(required = true) final Double latitude,
-            @RequestParam(required = true) final DeliveryAddress address
+            @RequestBody(required = true) final DeliveryAddress address
             ) {
         log.debug("Entering checkoutCart endpoint with customerId: {},"
                         + " confirmationType: {}, signature: {}",
