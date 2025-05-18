@@ -1,4 +1,4 @@
-package cart.config;
+package com.podzilla.cart.config;
 
 
 import org.springframework.context.annotation.Bean;

@@ -1,7 +1,7 @@
-package cart.controller;
+package com.podzilla.cart.controller;
 
-import cart.model.PromoCode;
-import cart.service.PromoCodeService;
+import com.podzilla.cart.model.PromoCode;
+import com.podzilla.cart.service.PromoCodeService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;

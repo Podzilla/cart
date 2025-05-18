@@ -1,11 +1,11 @@
 package service;
-import cart.exception.GlobalHandlerException;
-import cart.model.Cart;
-import cart.model.CartItem;
-import cart.model.PromoCode;
-import cart.repository.CartRepository;
-import cart.service.CartService;
-import cart.service.PromoCodeService;
+import com.podzilla.cart.exception.GlobalHandlerException;
+import com.podzilla.cart.model.Cart;
+import com.podzilla.cart.model.CartItem;
+import com.podzilla.cart.model.PromoCode;
+import com.podzilla.cart.repository.CartRepository;
+import com.podzilla.cart.service.CartService;
+import com.podzilla.cart.service.PromoCodeService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -13,9 +13,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.http.HttpStatus;
-import org.springframework.test.util.ReflectionTestUtils;
 
 import com.podzilla.mq.EventPublisher;
 import com.podzilla.mq.EventsConstants;

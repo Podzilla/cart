@@ -1,7 +1,7 @@
-package cart.repository;
+package com.podzilla.cart.repository;
 
 
-import cart.model.PromoCode;
+import com.podzilla.cart.model.PromoCode;
 import org.springframework.data.mongodb.repository.MongoRepository;
 import org.springframework.stereotype.Repository;
 
