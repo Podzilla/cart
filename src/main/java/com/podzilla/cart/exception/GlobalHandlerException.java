@@ -1,4 +1,4 @@
-package cart.exception;
+package com.podzilla.cart.exception;
 
 import org.springframework.http.HttpStatus;
 

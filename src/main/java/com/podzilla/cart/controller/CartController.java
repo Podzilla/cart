@@ -1,7 +1,7 @@
-package cart.controller;
+package com.podzilla.cart.controller;
 
-import cart.model.Cart;
-import cart.service.CartService;
+import com.podzilla.cart.model.Cart;
+import com.podzilla.cart.service.CartService;
 import com.podzilla.mq.events.ConfirmationType;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -22,7 +22,7 @@ import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestBody;
-import cart.model.CartItem;
+import com.podzilla.cart.model.CartItem;
 import io.swagger.v3.oas.annotations.media.Content;
 import org.springframework.web.bind.annotation.RequestHeader;
 

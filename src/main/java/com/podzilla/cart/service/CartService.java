@@ -1,10 +1,10 @@
-package cart.service;
+package com.podzilla.cart.service;
 
-import cart.exception.GlobalHandlerException;
-import cart.model.Cart;
-import cart.model.CartItem;
-import cart.model.PromoCode;
-import cart.repository.CartRepository;
+import com.podzilla.cart.exception.GlobalHandlerException;
+import com.podzilla.cart.model.Cart;
+import com.podzilla.cart.model.CartItem;
+import com.podzilla.cart.model.PromoCode;
+import com.podzilla.cart.repository.CartRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;

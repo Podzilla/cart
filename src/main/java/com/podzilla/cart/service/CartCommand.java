@@ -1,6 +1,6 @@
-package cart.service;
+package com.podzilla.cart.service;
 
-import cart.model.Cart;
+import com.podzilla.cart.model.Cart;
 
 public interface CartCommand {
     Cart execute();
