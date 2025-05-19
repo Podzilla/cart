@@ -1,5 +1,6 @@
 package com.podzilla.cart.controller;
 
+import com.podzilla.auth.annotations.AllowedRoles;
 import com.podzilla.cart.model.PromoCode;
 import com.podzilla.cart.service.PromoCodeService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -22,6 +23,7 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/admin/promocodes")
+@AllowedRoles({"ROLE_ADMIN"})
 @RequiredArgsConstructor
 @Tag(name = "PromoCode Admin", description = "Manage promotional codes (Requires Admin Role)")
 @Slf4j
