@@ -294,7 +294,7 @@ public class CartService {
                             + " Discount={}, Total={}, ConfirmationType={}",
                     cart.getId(), cart.getSubTotal(), cart.getDiscountAmount(),
                     cart.getTotalPrice(), confirmationType);
-            eventPublisher.publishEvent(EventsConstants.ORDER_PLACED, checkoutEvent);
+            eventPublisher.publishEvent(EventsConstants.CART_CHECKEDOUT, checkoutEvent);
 
             log.info("Checkout event published successfully for cartId: {}. Clearing cart.", cart.getId());
             cart.getItems().clear();

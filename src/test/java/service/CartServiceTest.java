@@ -343,12 +343,12 @@ class CartServiceTest {
         PromoCode promo = createTestPromoCode("SAVE10", PromoCode.DiscountType.PERCENTAGE, new BigDecimal("10"), null, null, true);
         when(promoCodeService.getActivePromoCode("SAVE10")).thenReturn(Optional.of(promo));
 
-        doNothing().when(eventPublisher).publishEvent(eq(EventsConstants.ORDER_PLACED), any(CartCheckedoutEvent.class));
+        doNothing().when(eventPublisher).publishEvent(eq(EventsConstants.CART_CHECKEDOUT), any(CartCheckedoutEvent.class));
 
         Cart result = cartService.checkoutCart(customerId, ConfirmationType.OTP, "", latitude, longitude, address);
 
         ArgumentCaptor<CartCheckedoutEvent> eventCaptor = ArgumentCaptor.forClass(CartCheckedoutEvent.class);
-        verify(eventPublisher).publishEvent(eq(EventsConstants.ORDER_PLACED), eventCaptor.capture());
+        verify(eventPublisher).publishEvent(eq(EventsConstants.CART_CHECKEDOUT), eventCaptor.capture());
         CartCheckedoutEvent publishedEvent = eventCaptor.getValue();
 
         assertEquals(customerId, publishedEvent.getCustomerId());
@@ -377,7 +377,7 @@ class CartServiceTest {
         Cart result = cartService.checkoutCart(customerId, ConfirmationType.SIGNATURE, signature, latitude, longitude, address);
 
         ArgumentCaptor<CartCheckedoutEvent> eventCaptor = ArgumentCaptor.forClass(CartCheckedoutEvent.class);
-        verify(eventPublisher).publishEvent(eq(EventsConstants.ORDER_PLACED), eventCaptor.capture());
+        verify(eventPublisher).publishEvent(eq(EventsConstants.CART_CHECKEDOUT), eventCaptor.capture());
         CartCheckedoutEvent publishedEvent = eventCaptor.getValue();
 
         assertEquals(ConfirmationType.SIGNATURE, publishedEvent.getConfirmationType());
@@ -393,7 +393,7 @@ class CartServiceTest {
 
         assertEquals(HttpStatus.BAD_REQUEST, ex.getStatus());
         assertEquals("Signature is required for SIGNATURE confirmation type", ex.getMessage());
-verify(eventPublisher, never()).publishEvent(eq(EventsConstants.ORDER_PLACED), any(CartCheckedoutEvent.class));
+verify(eventPublisher, never()).publishEvent(eq(EventsConstants.CART_CHECKEDOUT), any(CartCheckedoutEvent.class));
     }
 
     @Test
@@ -405,7 +405,7 @@ verify(eventPublisher, never()).publishEvent(eq(EventsConstants.ORDER_PLACED), a
 
         assertEquals(HttpStatus.BAD_REQUEST, ex.getStatus());
         assertEquals("Cannot checkout an empty cart.", ex.getMessage());
-verify(eventPublisher, never()).publishEvent(eq(EventsConstants.ORDER_PLACED), any(CartCheckedoutEvent.class));
+verify(eventPublisher, never()).publishEvent(eq(EventsConstants.CART_CHECKEDOUT), any(CartCheckedoutEvent.class));
     }
 
     @Test
@@ -421,7 +421,7 @@ verify(eventPublisher, never()).publishEvent(eq(EventsConstants.ORDER_PLACED), a
         cart.setDiscountAmount(new BigDecimal(formattedBigZero));
 
         doThrow(new RuntimeException("Event publish error")).when(eventPublisher)
-                .publishEvent(eq(EventsConstants.ORDER_PLACED), any(CartCheckedoutEvent.class));
+                .publishEvent(eq(EventsConstants.CART_CHECKEDOUT), any(CartCheckedoutEvent.class));
 
         RuntimeException ex = assertThrows(RuntimeException.class,
                 () -> cartService.checkoutCart(customerId, ConfirmationType.QR_CODE, null, latitude, longitude, address));
